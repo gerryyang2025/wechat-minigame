@@ -1,0 +1,6 @@
+{
+  "deviceOrientation": "portrait",
+  "showStatusBar": false,
+  "lazyCodeLoading": "requiredComponents",
+  "openDataContext": "openDataContext"
+}

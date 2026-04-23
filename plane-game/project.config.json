@@ -1,0 +1,101 @@
+{
+  "description": "纸飞机 War 2013 微信小游戏项目",
+  "setting": {
+    "urlCheck": true,
+    "es6": true,
+    "postcss": true,
+    "minified": true,
+    "newFeature": true,
+    "compileWorklet": false,
+    "uglifyFileName": false,
+    "uploadWithSourceMap": false,
+    "enhance": false,
+    "packNpmManually": false,
+    "packNpmRelationList": [],
+    "ignoreDevUnusedFiles": true,
+    "ignoreUploadUnusedFiles": true,
+    "localPlugins": false,
+    "disableUseStrict": false,
+    "useCompilerPlugins": false,
+    "condition": false,
+    "swc": false,
+    "disableSWC": true,
+    "babelSetting": {
+      "ignore": [],
+      "disablePlugins": [],
+      "outputPath": ""
+    }
+  },
+  "compileType": "minigame",
+  "libVersion": "latest",
+  "appid": "wx879a9bf33c96b685",
+  "projectname": "plane-game",
+  "simulatorPluginLibVersion": {},
+  "packOptions": {
+    "ignore": [
+      {
+        "value": "docs",
+        "type": "folder"
+      },
+      {
+        "value": "scripts",
+        "type": "folder"
+      },
+      {
+        "value": "README.md",
+        "type": "file"
+      },
+      {
+        "value": "LICENSE",
+        "type": "file"
+      },
+      {
+        "value": ".gitignore",
+        "type": "file"
+      },
+      {
+        "value": "project.private.config.json",
+        "type": "file"
+      },
+      {
+        "value": "project.private.config.example.json",
+        "type": "file"
+      },
+      {
+        "value": ".DS_Store",
+        "type": "file"
+      },
+      {
+        "value": "images/Generated Image",
+        "type": "prefix"
+      },
+      {
+        "value": "images/enemy1.jpg",
+        "type": "file"
+      },
+      {
+        "value": "audio/bgm2.mp3",
+        "type": "file"
+      }
+    ],
+    "include": []
+  },
+  "watchOptions": {
+    "ignore": [
+      "docs/**",
+      "scripts/**",
+      "README.md",
+      "LICENSE",
+      ".gitignore",
+      "project.private.config.example.json",
+      "images/Generated Image*.png",
+      "images/enemy1.jpg",
+      "audio/bgm2.mp3"
+    ]
+  },
+  "editorSetting": {
+    "tabIndent": "insertSpaces",
+    "tabSize": 2
+  },
+  "isGameTourist": false
+}

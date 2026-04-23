@@ -1,0 +1,5 @@
+# Local WeChat DevTools config
+project.private.config.json
+
+# macOS
+.DS_Store
