@@ -407,6 +407,7 @@ function PlaneMinigameRuntime(options) {
   this.manualPause = false;
   this.reviveUsed = false;
   this.revivePending = false;
+  this.reviveHideDetectedAt = 0;
   this.destroyed = false;
   this.raf = utils.getRequestAnimationFrame();
   this.lastTimestamp = 0;
@@ -1454,6 +1455,7 @@ PlaneMinigameRuntime.prototype.startGame = function () {
   this.manualPause = false;
   this.reviveUsed = false;
   this.revivePending = false;
+  this.reviveHideDetectedAt = 0;
   this.lastTimestamp = 0;
   this.pauseButtonRect = this.createPauseButtonRect();
   this.bombButtonRect = this.createBombButtonRect();
@@ -1502,26 +1504,39 @@ PlaneMinigameRuntime.prototype.requestShareRevive = function () {
   }
 
   this.revivePending = true;
+  this.reviveHideDetectedAt = 0;
+  this.emitUiChange();
   this.render();
 
-  wx.shareAppMessage({
-    title: gameMeta.GAME_TITLE + '：' + gameMeta.GAME_SLOGAN,
-    imageUrl: 'images/player1.png',
-    query: 'from=revive',
-    success: function () {
-      self.reviveAfterShare();
-    },
-    fail: function () {
-      self.revivePending = false;
-      self.render();
-    },
-    complete: function () {
-      if (self.state === 'over') {
-        self.revivePending = false;
-        self.render();
+  try {
+    wx.shareAppMessage({
+      title: gameMeta.GAME_TITLE + '：' + gameMeta.GAME_SLOGAN,
+      imageUrl: 'images/player1.png',
+      query: 'from=revive',
+      success: function () {
+        if (self.state === 'over' && self.revivePending) {
+          self.reviveAfterShare();
+        }
+      },
+      fail: function () {
+        self.cancelShareRevive();
+      },
+      complete: function () {
+        if (self.state === 'over' && self.revivePending) {
+          self.render();
+        }
       }
-    }
-  });
+    });
+  } catch (error) {
+    this.cancelShareRevive();
+  }
+};
+
+PlaneMinigameRuntime.prototype.cancelShareRevive = function () {
+  this.revivePending = false;
+  this.reviveHideDetectedAt = 0;
+  this.emitUiChange();
+  this.render();
 };
 
 PlaneMinigameRuntime.prototype.reviveAfterShare = function () {
@@ -1530,6 +1545,7 @@ PlaneMinigameRuntime.prototype.reviveAfterShare = function () {
 
   this.reviveUsed = true;
   this.revivePending = false;
+  this.reviveHideDetectedAt = 0;
   this.state = 'running';
   this.level = 1 + Math.floor(this.score / 500);
   this.currentRunRank = null;
@@ -1699,12 +1715,20 @@ PlaneMinigameRuntime.prototype.handleTouchCancel = function (event) {
 
 PlaneMinigameRuntime.prototype.onHide = function () {
   this.paused = true;
+  if (this.state === 'over' && this.revivePending) {
+    this.reviveHideDetectedAt = utils.now();
+  }
   this.postOpenDataMessage('hideFriendLeaderboard');
   this.audio.pauseBgm();
   this.emitUiChange();
 };
 
 PlaneMinigameRuntime.prototype.onShow = function () {
+  if (this.state === 'over' && this.revivePending && this.reviveHideDetectedAt > 0) {
+    this.reviveAfterShare();
+    return;
+  }
+
   if (this.state === 'running' && !this.manualPause) {
     this.paused = false;
     this.lastTimestamp = 0;
