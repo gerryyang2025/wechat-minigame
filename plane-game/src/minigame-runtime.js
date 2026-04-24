@@ -258,6 +258,26 @@ function renderHudBadge(ctx, badge, x, y, width, height, scale) {
   ctx.restore();
 }
 
+function drawHpPips(ctx, x, y, hp, maxHp, scale) {
+  var pipWidth = 16 * scale;
+  var pipHeight = 8 * scale;
+  var gap = 5 * scale;
+
+  for (var i = 0; i < maxHp; i += 1) {
+    utils.drawSketchRoundRect(
+      ctx,
+      x + i * (pipWidth + gap),
+      y,
+      pipWidth,
+      pipHeight,
+      999,
+      i < hp ? 'rgba(220, 108, 79, 0.95)' : 'rgba(219, 209, 194, 0.68)',
+      i < hp ? 'rgba(131, 76, 54, 0.52)' : 'rgba(109, 98, 88, 0.28)',
+      1
+    );
+  }
+}
+
 function drawCoverPlaneIcon(ctx, x, y, width, height) {
   ctx.save();
   ctx.translate(x, y);
@@ -470,6 +490,9 @@ PlaneMinigameRuntime.prototype.getSnapshot = function () {
     survivalTime: this.survivalTime,
     slowMotionTime: this.slowMotionTime,
     scoreMultiplierTime: this.scoreMultiplierTime,
+    hp: this.player ? this.player.hp : 0,
+    maxHp: this.player ? this.player.maxHp : 0,
+    invincible: !!(this.player && this.player.isInvincible && this.player.isInvincible()),
     doubleShotTime: this.player ? this.player.doubleShotTime : 0,
     firepowerTime: this.player ? this.player.firepowerTime : 0,
     shieldTime: this.player ? this.player.shieldTime : 0,
@@ -1578,7 +1601,7 @@ PlaneMinigameRuntime.prototype.reviveAfterShare = function () {
   this.bombs = carriedBombs;
   this.clearCharges = carriedClearCharges;
   this.player = new Player(this, this.assets.player, this.assets.bullet);
-  this.player.activatePowerUp('shield');
+  this.player.invincibleTime = 2;
   this.pointerIdentifier = null;
   this.dragOffsetX = 0;
   this.dragOffsetY = 0;
@@ -1788,6 +1811,50 @@ PlaneMinigameRuntime.prototype.destroy = function () {
   this.audio.destroy();
 };
 
+PlaneMinigameRuntime.prototype.applyPlayerHit = function (reason, hitX, hitY) {
+  var result = null;
+
+  if (!this.player) {
+    return false;
+  }
+
+  result = this.player.takeDamage(1);
+
+  if (!result.damaged) {
+    return false;
+  }
+
+  this.audio.playEffect('hit');
+
+  if (result.defeated) {
+    this.explosions.push(new Explosion(
+      this.player.x + this.player.width / 2,
+      this.player.y + this.player.height / 2,
+      this.scale
+    ));
+    this.audio.stopBgm();
+    this.audio.playEffect('gameover');
+    this.showBanner(reason === 'collision' ? '战机被击毁' : '被敌机击中', '#3f3732', 1.05);
+    this.triggerShake(0.24, 7 * this.scale);
+    this.triggerScreenFlash('#ece5da', 0.24);
+    this.endGame();
+    return true;
+  }
+
+  this.showBanner('机体受损', '#5a4f47', 0.88);
+  this.addFloatingText(
+    'HP -1',
+    hitX || (this.player.x + this.player.width / 2),
+    hitY || (this.player.y + this.player.height / 2),
+    '#5a4f47'
+  );
+  this.triggerShake(0.12, 3.6 * this.scale);
+  this.triggerScreenFlash('#f0e8db', 0.18);
+  this.triggerVibration('light');
+  this.emitUiChange();
+  return false;
+};
+
 PlaneMinigameRuntime.prototype.update = function (deltaTime) {
   utils.updateStars(this.stars, deltaTime, this.height);
   this.updateFeedback(deltaTime);
@@ -1863,13 +1930,14 @@ PlaneMinigameRuntime.prototype.update = function (deltaTime) {
     }
 
     if (utils.intersects(enemy.getBounds(), this.player.getBounds())) {
+      this.enemies.splice(enemyIndex, 1);
+      this.explosions.push(new Explosion(
+        enemy.x + enemy.width / 2,
+        enemy.y + enemy.height / 2,
+        Math.max(this.scale, enemy.scale * 0.85)
+      ));
+
       if (this.player.consumeShield && this.player.consumeShield()) {
-        this.enemies.splice(enemyIndex, 1);
-        this.explosions.push(new Explosion(
-          enemy.x + enemy.width / 2,
-          enemy.y + enemy.height / 2,
-          this.scale
-        ));
         this.audio.playEffect('hit');
         this.showBanner('护盾破裂', '#71655b', 0.9);
         this.triggerShake(0.12, 3.2 * this.scale);
@@ -1879,18 +1947,15 @@ PlaneMinigameRuntime.prototype.update = function (deltaTime) {
         continue;
       }
 
-      this.explosions.push(new Explosion(
-        this.player.x + this.player.width / 2,
-        this.player.y + this.player.height / 2,
-        this.scale
-      ));
-      this.audio.stopBgm();
-      this.audio.playEffect('gameover');
-      this.showBanner('挑战失败', '#3f3732', 1.1);
-      this.triggerShake(0.26, 8 * this.scale);
-      this.triggerScreenFlash('#ece5da', 0.28);
-      this.endGame();
-      return;
+      if (this.applyPlayerHit('collision', enemy.x + enemy.width / 2, enemy.y + enemy.height / 2)) {
+        return;
+      }
+
+      if (this.state !== 'running') {
+        return;
+      }
+
+      continue;
     }
 
     var spawnedEnemyBullets = enemy.tryShoot ? enemy.tryShoot(enemyDeltaTime) : [];
@@ -1919,18 +1984,15 @@ PlaneMinigameRuntime.prototype.update = function (deltaTime) {
         continue;
       }
 
-      this.explosions.push(new Explosion(
-        this.player.x + this.player.width / 2,
-        this.player.y + this.player.height / 2,
-        this.scale
-      ));
-      this.audio.stopBgm();
-      this.audio.playEffect('gameover');
-      this.showBanner('被敌机击中', '#3f3732', 1);
-      this.triggerShake(0.24, 7 * this.scale);
-      this.triggerScreenFlash('#ece5da', 0.24);
-      this.endGame();
-      return;
+      if (this.applyPlayerHit('bullet', enemyBullet.x + enemyBullet.width / 2, enemyBullet.y + enemyBullet.height / 2)) {
+        return;
+      }
+
+      if (this.state !== 'running') {
+        return;
+      }
+
+      continue;
     }
   }
 
@@ -2320,8 +2382,18 @@ PlaneMinigameRuntime.prototype.renderHud = function (ctx) {
   ctx.textAlign = 'center';
   ctx.fillStyle = INK;
   setUiFont(ctx, 18 * this.scale, 'bold');
-  ctx.fillText('第 ' + this.level + ' 关', this.width / 2, top + 34 * this.scale);
-  drawPanelUnderline(ctx, this.width / 2 - 34 * this.scale, top + 42 * this.scale, 68 * this.scale, 0.32);
+  ctx.fillText('第 ' + this.level + ' 关', this.width / 2, top + 26 * this.scale);
+  ctx.fillStyle = SOFT_INK;
+  setUiFont(ctx, 12 * this.scale, 'bold');
+  ctx.textAlign = 'right';
+  ctx.fillText('HP', this.width / 2 - 18 * this.scale, top + 46 * this.scale);
+  drawHpPips(ctx, this.width / 2 - 10 * this.scale, top + 41 * this.scale, this.player.hp, this.player.maxHp, this.scale);
+  if (this.player.isInvincible && this.player.isInvincible()) {
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#9a5f31';
+    setUiFont(ctx, 11 * this.scale, 'bold');
+    ctx.fillText('无敌', this.width / 2 + 56 * this.scale, top + 46 * this.scale);
+  }
   this.renderPauseButton(ctx);
   this.renderBombButton(ctx);
   this.renderClearButton(ctx);

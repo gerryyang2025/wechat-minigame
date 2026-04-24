@@ -2,6 +2,9 @@
 
 var utils = require('./utils');
 var powerUpStyles = require('./powerup-style');
+var PLAYER_MAX_HP = 3;
+var PLAYER_INVINCIBLE_DURATION = 1.6;
+var PLAYER_BLINK_INTERVAL = 0.2;
 var DOUBLE_SHOT_DURATION = 30;
 var FIREPOWER_UPGRADE_DURATION = 10;
 var FIREPOWER_UPGRADE_INTERVAL = 0.18;
@@ -667,6 +670,9 @@ function Player(game, sprite, bulletSprite) {
   this.firepowerTime = 0;
   this.shieldTime = 0;
   this.shieldHits = 0;
+  this.maxHp = PLAYER_MAX_HP;
+  this.hp = PLAYER_MAX_HP;
+  this.invincibleTime = 0;
 }
 
 Player.prototype.update = function (deltaTime) {
@@ -675,6 +681,7 @@ Player.prototype.update = function (deltaTime) {
   this.doubleShotTime = Math.max(0, this.doubleShotTime - deltaTime);
   this.firepowerTime = Math.max(0, this.firepowerTime - deltaTime);
   this.shieldTime = Math.max(0, this.shieldTime - deltaTime);
+  this.invincibleTime = Math.max(0, this.invincibleTime - deltaTime);
   this.fireInterval = this.hasFirepowerUpgrade()
     ? FIREPOWER_UPGRADE_INTERVAL
     : this.baseFireInterval;
@@ -705,6 +712,14 @@ Player.prototype.hasShield = function () {
   return this.shieldHits > 0 && this.shieldTime > 0;
 };
 
+Player.prototype.isInvincible = function () {
+  return this.invincibleTime > 0;
+};
+
+Player.prototype.getHpRatio = function () {
+  return this.maxHp > 0 ? this.hp / this.maxHp : 0;
+};
+
 Player.prototype.activatePowerUp = function (type) {
   if (type === 'double') {
     this.doubleShotTime = Math.max(this.doubleShotTime, DOUBLE_SHOT_DURATION);
@@ -729,7 +744,32 @@ Player.prototype.consumeShield = function () {
 
   this.shieldHits = 0;
   this.shieldTime = 0;
+  this.invincibleTime = Math.max(this.invincibleTime, PLAYER_INVINCIBLE_DURATION);
   return true;
+};
+
+Player.prototype.resetHp = function () {
+  this.hp = this.maxHp;
+  this.invincibleTime = 0;
+};
+
+Player.prototype.takeDamage = function (amount) {
+  var damage = amount || 1;
+
+  if (this.isInvincible()) {
+    return {
+      damaged: false,
+      defeated: false
+    };
+  }
+
+  this.hp = Math.max(0, this.hp - damage);
+  this.invincibleTime = this.hp > 0 ? PLAYER_INVINCIBLE_DURATION : 0;
+
+  return {
+    damaged: true,
+    defeated: this.hp <= 0
+  };
 };
 
 Player.prototype.moveTo = function (centerX, centerY) {
@@ -786,6 +826,15 @@ Player.prototype.containsPoint = function (x, y) {
 };
 
 Player.prototype.draw = function (ctx) {
+  var blinking = this.isInvincible() && Math.floor(this.invincibleTime / PLAYER_BLINK_INTERVAL) % 2 === 0;
+
+  if (blinking) {
+    ctx.save();
+    ctx.globalAlpha = 0.42;
+  } else {
+    ctx.save();
+  }
+
   ctx.save();
   ctx.translate(this.x, this.y);
 
@@ -855,6 +904,7 @@ Player.prototype.draw = function (ctx) {
     drawSketchCircle(ctx, this.width * 0.5, this.height * 0.48, this.width * 0.68, 'rgba(94, 84, 75, 0.42)', 1.1, 0.65);
   }
 
+  ctx.restore();
   ctx.restore();
 };
 

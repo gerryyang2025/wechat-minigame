@@ -188,7 +188,7 @@ The preferred implementation rules are:
 
 - keep supply effects short and easy to read
 - avoid stacking too many simultaneous buffs
-- preserve one-hand readability and the instant-fail core loop
+- preserve one-hand readability and a high-pressure survival loop
 - let HUD badges show only the most important active timed effects
 - favor effects that create clear bursts of relief, aggression, or scoring pressure
 - prefer silhouette and color recognition over tiny text on fast-moving supply drops
@@ -209,7 +209,9 @@ Implementation detail for the current build:
 
 - `Bomb` is now delivered through an independent falling supply rhythm instead of enemy-death drops.
 - `Firepower Upgrade` lasts 10 seconds and temporarily switches the player into a faster three-lane straight-fire burst.
-- Share revive intentionally preserves carried bombs and can be used up to three times per run because it continues the same run rather than starting a fresh session.
+- The current build uses a three-pip HP model with a short invincibility blink window after non-lethal hits instead of a strict instant-fail rule.
+- Share revive intentionally preserves carried bombs, grants a short post-revive invincibility window, and can be used up to three times per run because it continues the same run rather than starting a fresh session.
+- Shield break now uses the same short invincibility rhythm as normal HP damage so the survival pacing stays closer to the `plane-game2` feel.
 - Supply-drop rendering now prioritizes palette separation and enlarged icons; labels are hidden when the pickup size would make them unreadable.
 - The lower-left defensive inventory has been simplified into compact item-count capsules to reduce HUD footprint during play.
 

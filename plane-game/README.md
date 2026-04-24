@@ -19,14 +19,16 @@
 - formation-style enemy waves with richer paths such as zigzag, swoop, arc, and hover patterns
 - pre-fire warning sketches that hint enemy bullet paths before impact
 - phase-based large-enemy escalation with stronger late-stage attack patterns
+- three-pip player HP, non-lethal damage handling, and a short invincibility blink window after hits
 - pause, resume, restart, and game-over overlays inside the game runtime
-- up to three share-based revives per run from the game-over screen
+- up to three share-based revives per run from the game-over screen, each with a short recovery invincibility window
 - local audio for BGM, hit, level-up, start, and game-over events
 - combat feedback such as muzzle flashes, floating score text, banners, screen flash, and vibration
 - parachute-style supply drops for double-shot, firepower-upgrade, shield, bullet-clear, slow-time, and score-boost pickups, plus independent bomb air drops
 - color-first supply readability with stronger per-item palette separation and optional labels only when the pickup is large enough to remain readable
 - compact bomb and bullet-clear inventory capsules at the lower-left corner for manual defensive item use
-- double-shot, firepower-upgrade, and shield states with remaining time shown in the HUD
+- double-shot, firepower-upgrade, and shield states with remaining time shown in the HUD, with shield break using the same recovery rhythm as HP damage
+- a center HUD HP strip that shows current health and temporary invincibility status
 - timed slow-motion and score-boost states shown in the HUD
 - a local run leaderboard panel accessible from the game-over screen
 - an open-data-context friend leaderboard entry from the game-over screen

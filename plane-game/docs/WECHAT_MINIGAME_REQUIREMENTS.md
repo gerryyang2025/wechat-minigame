@@ -99,8 +99,9 @@ The minigame build includes:
 - heavier large-enemy pressure with signature fan volleys
 - pre-fire warning sketches for incoming enemy bullet paths
 - multi-phase large-enemy attack escalation
+- player HP, non-lethal damage handling, hit feedback, and a short invincibility window after hits
 - pause, resume, restart, and game-over overlays inside the canvas runtime
-- up to three share-based revives per run from the game-over screen
+- up to three share-based revives per run from the game-over screen, each with a short recovery invincibility window
 - double-shot, firepower-upgrade, shield, bullet-clear, slow-time, and score-boost power-ups
 - independent bomb air drops plus compact manual bomb and bullet-clear inventory capsules
 - stronger power-up readability through differentiated silhouettes, clearer palette separation, and color-first recognition when labels would be too small
@@ -146,4 +147,5 @@ The main runtime:
 
 - replace placeholder audio assets with production-ready files
 - continue refining supply-drop readability and visual hierarchy on small-screen devices
+- verify the new HP / invincibility pacing still feels readable on dense late-game waves
 - complete final real-device verification in WeChat DevTools before release
