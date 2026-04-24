@@ -2818,8 +2818,8 @@ PlaneMinigameRuntime.prototype.renderLeaderboard = function (ctx) {
         height: contentHeight
       };
       this.postOpenDataMessage('showFriendLeaderboard', {
-        width: Math.round(contentWidth * this.pixelRatio),
-        height: Math.round(contentHeight * this.pixelRatio),
+        width: Math.round(contentWidth),
+        height: Math.round(contentHeight),
         pixelRatio: this.pixelRatio,
         scoreKey: 'plane_best_score',
         title: '好友排行',

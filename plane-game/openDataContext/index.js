@@ -75,6 +75,10 @@ function setCanvasSize(width, height, pixelRatio) {
   var targetCanvas = getRenderCanvas();
   var targetWidth = 0;
   var targetHeight = 0;
+  var actualWidth = 0;
+  var actualHeight = 0;
+  var scaleX = 1;
+  var scaleY = 1;
 
   if (!targetCanvas || !ctx) {
     return;
@@ -84,17 +88,19 @@ function setCanvasSize(width, height, pixelRatio) {
   state.height = Math.max(260, height || state.height);
   state.pixelRatio = Math.max(1, pixelRatio || state.pixelRatio || 1);
 
-  targetWidth = Math.round(state.width);
-  targetHeight = Math.round(state.height);
+  targetWidth = Math.round(state.width * state.pixelRatio);
+  targetHeight = Math.round(state.height * state.pixelRatio);
 
   trySetCanvasDimension(targetCanvas, 'width', targetWidth);
   trySetCanvasDimension(targetCanvas, 'height', targetHeight);
 
-  state.width = Math.max(240, getCanvasDimension(targetCanvas, 'width', targetWidth));
-  state.height = Math.max(260, getCanvasDimension(targetCanvas, 'height', targetHeight));
+  actualWidth = Math.max(1, getCanvasDimension(targetCanvas, 'width', targetWidth));
+  actualHeight = Math.max(1, getCanvasDimension(targetCanvas, 'height', targetHeight));
+  scaleX = actualWidth / state.width;
+  scaleY = actualHeight / state.height;
 
   if (ctx.setTransform) {
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.setTransform(scaleX, 0, 0, scaleY, 0, 0);
   }
 }
 
@@ -359,7 +365,6 @@ function render() {
   }
 
   ctx.clearRect(0, 0, state.width, state.height);
-  drawStickyNote(state.width - noteWidth - padding, footerY, noteWidth, 40, '我的最高分', state.selfScore || 0);
 
   if (state.errorMessage) {
     renderMessage(state.errorMessage, '请稍后重新打开好友排行');
@@ -375,6 +380,8 @@ function render() {
     renderMessage('暂无好友战绩数据', '可先完成一局，再重新打开排行');
     return;
   }
+
+  drawStickyNote(state.width - noteWidth - padding, footerY, noteWidth, 40, '我的最高分', state.selfScore || 0);
 
   for (var i = 0; i < state.records.length; i += 1) {
     drawRow(state.records[i], i, listX, listY + i * (rowHeight + rowGap), listWidth, rowHeight);
