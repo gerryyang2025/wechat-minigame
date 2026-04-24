@@ -300,22 +300,26 @@ function drawStickyNote(x, y, width, height, label, value) {
 function drawRow(record, index, rowX, rowY, rowWidth, rowHeight) {
   var rank = index + 1;
   var highlight = rank <= 3;
-  var rowFill = highlight ? 'rgba(246, 239, 229, 0.95)' : 'rgba(247, 242, 234, 0.74)';
+  var rowFill = highlight ? 'rgba(232, 223, 211, 0.98)' : 'rgba(246, 241, 233, 0.76)';
   var nickname = record.nickname.slice(0, 10);
+  var rankLabel = '#' + rank;
+  var subLabel = highlight ? ('TOP ' + rank + ' · 好友战绩') : '好友战绩';
 
   drawSketchRoundRect(rowX, rowY, rowWidth, rowHeight, 14, rowFill, 'rgba(99, 88, 79, 0.22)', 1);
-  drawRankBadge(rank, rowX + 30, rowY + rowHeight / 2);
   drawSketchLine(rowX + 56, rowY + rowHeight * 0.6, rowX + rowWidth - 84, rowY + rowHeight * 0.6, 'rgba(115, 104, 94, 0.16)', 1, 0.26);
 
   ctx.save();
   ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
+  ctx.fillStyle = INK;
+  setFont(13, 'bold');
+  ctx.fillText(rankLabel, rowX + 14, rowY + rowHeight / 2);
   ctx.fillStyle = '#4f453d';
   setFont(14, 'bold');
-  ctx.fillText(nickname, rowX + 62, rowY + rowHeight / 2 - 7);
+  ctx.fillText(nickname, rowX + 58, rowY + rowHeight / 2 - 7);
   ctx.fillStyle = LIGHT_INK;
   setFont(11, null);
-  ctx.fillText(rank <= 3 ? '手绘强档' : '好友战绩', rowX + 62, rowY + rowHeight / 2 + 10);
+  ctx.fillText(subLabel, rowX + 58, rowY + rowHeight / 2 + 10);
 
   ctx.textAlign = 'right';
   ctx.fillStyle = INK;
@@ -340,16 +344,14 @@ function renderMessage(message, subMessage) {
 }
 
 function render() {
-  var panelX = 14;
-  var panelY = 16;
-  var panelWidth = state.width - 28;
-  var panelHeight = state.height - 32;
-  var listX = panelX + 14;
-  var listY = panelY + 66;
-  var listWidth = panelWidth - 28;
-  var noteY = panelY + panelHeight - 60;
-  var noteWidth = Math.min(136, panelWidth - 28);
-  var availableListHeight = Math.max(32, noteY - listY - 10);
+  var padding = 10;
+  var listX = padding;
+  var listY = 10;
+  var listWidth = state.width - padding * 2;
+  var footerHeight = 46;
+  var footerY = state.height - footerHeight - 4;
+  var noteWidth = Math.min(136, listWidth);
+  var availableListHeight = Math.max(36, footerY - listY - 8);
   var rowGap = 6;
   var rowHeight = Math.max(28, Math.min(34, (availableListHeight - (Math.max(0, state.records.length - 1) * rowGap)) / Math.max(1, state.records.length)));
 
@@ -358,22 +360,7 @@ function render() {
   }
 
   ctx.clearRect(0, 0, state.width, state.height);
-  drawBackground();
-  drawSketchRoundRect(panelX, panelY, panelWidth, panelHeight, 20, 'rgba(248, 244, 236, 0.88)', 'rgba(76, 67, 58, 0.55)', 1.4);
-
-  ctx.save();
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillStyle = INK;
-  setFont(24, 'bold');
-  ctx.fillText(state.title, state.width / 2, panelY + 24);
-  ctx.fillStyle = SOFT_INK;
-  setFont(11, null);
-  ctx.fillText('开放数据域好友战绩草稿板', state.width / 2, panelY + 46);
-  ctx.restore();
-
-  drawSketchLine(panelX + 20, panelY + 54, panelX + panelWidth - 20, panelY + 54, 'rgba(94, 83, 74, 0.24)', 1.1, 0.35);
-  drawStickyNote(panelX + panelWidth - noteWidth - 16, noteY, noteWidth, 44, '我的最高分', state.selfScore || 0);
+  drawStickyNote(state.width - noteWidth - padding, footerY, noteWidth, 40, '我的最高分', state.selfScore || 0);
 
   if (state.errorMessage) {
     renderMessage(state.errorMessage, '请稍后重新打开好友排行');
@@ -381,7 +368,7 @@ function render() {
   }
 
   if (!state.ready) {
-    renderMessage('正在获取好友战绩...', '稍等一下，草稿板正在落笔');
+    renderMessage('正在获取好友战绩...', '稍等一下，正在同步好友分数');
     return;
   }
 
@@ -399,7 +386,7 @@ function render() {
   ctx.textBaseline = 'middle';
   ctx.fillStyle = SOFT_INK;
   setFont(11, null);
-  ctx.fillText('数据来源：开放数据域好友托管分数', panelX + 16, panelY + panelHeight - 18);
+  ctx.fillText('开放数据域好友分数', padding + 2, footerY + 20);
   ctx.restore();
 }
 
