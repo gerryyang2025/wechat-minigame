@@ -2799,7 +2799,8 @@ PlaneMinigameRuntime.prototype.renderLeaderboard = function (ctx) {
   var contentX = panelX + 18 * this.scale;
   var contentY = panelY + (tabRects ? 126 * this.scale : 84 * this.scale);
   var contentWidth = panelWidth - 36 * this.scale;
-  var contentHeight = panelHeight - (tabRects ? 160 * this.scale : 118 * this.scale);
+  var contentBottomY = panelY + panelHeight - 20 * this.scale;
+  var contentHeight = Math.max(72 * this.scale, contentBottomY - contentY);
   var records = this.leaderboard.length ? this.leaderboard : [{
     score: 0,
     level: 0,
@@ -2830,8 +2831,8 @@ PlaneMinigameRuntime.prototype.renderLeaderboard = function (ctx) {
     panelY + 42 * this.scale
   );
 
-  drawPencilButton(ctx, closeRect, '关闭', {
-    fontSize: 17 * this.scale
+  drawPencilButton(ctx, closeRect, '×', {
+    fontSize: 24 * this.scale
   });
 
   if (tabRects) {
@@ -2901,18 +2902,24 @@ PlaneMinigameRuntime.prototype.renderLeaderboard = function (ctx) {
   } else {
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
+    var recordCount = Math.max(1, records.length);
+    var rowGap = 8 * this.scale;
+    var rowHeight = Math.max(
+      30 * this.scale,
+      Math.min(36 * this.scale, (contentHeight - rowGap * (recordCount - 1)) / recordCount)
+    );
 
     for (var i = 0; i < records.length; i += 1) {
       var record = records[i];
-      var itemY = contentY + 20 * this.scale + i * 46 * this.scale;
+      var itemY = contentY + rowHeight / 2 + i * (rowHeight + rowGap);
       var highlight = this.currentRunRank === i + 1;
 
       utils.drawSketchRoundRect(
         ctx,
         panelX + 18 * this.scale,
-        itemY - 18 * this.scale,
+        itemY - rowHeight / 2,
         panelWidth - 36 * this.scale,
-        36 * this.scale,
+        rowHeight,
         14,
         highlight ? 'rgba(232, 223, 211, 0.98)' : 'rgba(246, 241, 233, 0.76)',
         'rgba(96, 86, 77, 0.28)',
@@ -2934,12 +2941,6 @@ PlaneMinigameRuntime.prototype.renderLeaderboard = function (ctx) {
       );
     }
   }
-
-  ctx.textAlign = 'center';
-  ctx.fillStyle = SOFT_INK;
-  setUiFont(ctx, 13 * this.scale, null);
-  ctx.fillText('点击右上角关闭', this.width / 2, panelY + panelHeight - 24 * this.scale);
-
   ctx.restore();
 };
 
