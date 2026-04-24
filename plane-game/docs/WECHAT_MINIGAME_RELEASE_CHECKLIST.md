@@ -63,6 +63,7 @@ Notes:
 - Verify the cover screen layout remains readable, with clear spacing between the plane preview, description text, author credit, and start button.
 - Verify audio behavior during mute mode, backgrounding, interruption, and app switching.
 - Verify restart flow, power-up pickup timing, and game-over behavior.
+- Verify that share revive can be used up to three times in a single run and is unavailable after the third revive.
 - Verify that supply-drop colors and silhouettes remain distinguishable on real devices, especially when labels are hidden due to size.
 - Verify that package size and ignored files are acceptable for upload.
 - Verify the largest packaged image/audio asset stays comfortably below the 200 KiB review threshold.

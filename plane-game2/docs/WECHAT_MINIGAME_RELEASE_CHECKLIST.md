@@ -64,6 +64,7 @@ Notes:
 - Verify the cover screen layout remains readable, with clear spacing between the title art, plane preview, description text, author credit, and start button.
 - Verify audio behavior during mute mode, backgrounding, interruption, and app switching.
 - Verify restart flow, bomb usage, double-laser pickup timing, and game-over behavior.
+- Verify that share revive can be used up to three times in a single run and is unavailable after the third revive.
 - Verify the shorter double-shot timing still feels readable on real devices.
 - Verify that sprites scale correctly on different DPR devices and that large enemies are not visually squashed.
 - Verify that the shared `Marker Felt` font loads for gameplay HUD, overlays, and the friend leaderboard; if it does not, confirm the system-font fallback still keeps text readable.

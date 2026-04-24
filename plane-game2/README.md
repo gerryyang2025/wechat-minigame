@@ -25,6 +25,7 @@ This project is the sprite-driven variant in this repository. It uses a 2D arcad
 - shorter arcade-style double-shot windows and a faster upgraded fire rhythm
 - manual bomb usage from the lower-left inventory capsule
 - pause / resume / restart button treatments plus sprite-aligned stat cards inside pause and game-over overlays
+- up to three share-based revives per run from the game-over screen
 - local device leaderboard plus an open-data-context friend leaderboard entry, with unified close buttons and local/friend tab switching
 - BGM and sound effects for buttons, bullets, bomb usage, pickups, enemy destruction, level-up, and game-over
 - inactive legacy images and audio have been removed from the active arcade branch

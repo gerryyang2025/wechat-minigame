@@ -104,6 +104,7 @@ The minigame build includes:
 - pre-fire warning sketches for incoming enemy bullet paths
 - multi-phase large-enemy attack escalation
 - pause, resume, restart, and game-over overlays inside the canvas runtime
+- up to three share-based revives per run from the game-over screen
 - player HP, hit flash, hit audio, and a short invincibility window after non-lethal damage
 - sprite-driven presentation with player, enemy, projectile, explosion, background, and button assets
 - a focused arcade-style pickup set with shorter double-shot supply drops, occasional stronger firepower upgrades, and independent bomb air drops

@@ -100,6 +100,7 @@ The minigame build includes:
 - pre-fire warning sketches for incoming enemy bullet paths
 - multi-phase large-enemy attack escalation
 - pause, resume, restart, and game-over overlays inside the canvas runtime
+- up to three share-based revives per run from the game-over screen
 - double-shot, firepower-upgrade, shield, bullet-clear, slow-time, and score-boost power-ups
 - independent bomb air drops plus compact manual bomb and bullet-clear inventory capsules
 - stronger power-up readability through differentiated silhouettes, clearer palette separation, and color-first recognition when labels would be too small

@@ -20,6 +20,7 @@
 - pre-fire warning sketches that hint enemy bullet paths before impact
 - phase-based large-enemy escalation with stronger late-stage attack patterns
 - pause, resume, restart, and game-over overlays inside the game runtime
+- up to three share-based revives per run from the game-over screen
 - local audio for BGM, hit, level-up, start, and game-over events
 - combat feedback such as muzzle flashes, floating score text, banners, screen flash, and vibration
 - parachute-style supply drops for double-shot, firepower-upgrade, shield, bullet-clear, slow-time, and score-boost pickups, plus independent bomb air drops

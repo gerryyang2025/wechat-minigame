@@ -209,7 +209,7 @@ Implementation detail for the current build:
 
 - `Bomb` is now delivered through an independent falling supply rhythm instead of enemy-death drops.
 - `Firepower Upgrade` lasts 10 seconds and temporarily switches the player into a faster three-lane straight-fire burst.
-- Share revive intentionally preserves carried bombs because it continues the same run rather than starting a fresh session.
+- Share revive intentionally preserves carried bombs and can be used up to three times per run because it continues the same run rather than starting a fresh session.
 - Supply-drop rendering now prioritizes palette separation and enlarged icons; labels are hidden when the pickup size would make them unreadable.
 - The lower-left defensive inventory has been simplified into compact item-count capsules to reduce HUD footprint during play.
 

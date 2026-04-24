@@ -20,6 +20,7 @@ var PANEL_FILL_ALT = 'rgba(236, 228, 215, 0.98)';
 var PANEL_STROKE = 'rgba(71, 61, 51, 0.82)';
 var BOMB_SUPPLY_INTERVAL_MIN = 15;
 var BOMB_SUPPLY_INTERVAL_RANGE = 7;
+var MAX_SHARE_REVIVES = 3;
 var Player = entities.Player;
 var Enemy = entities.Enemy;
 var Explosion = entities.Explosion;
@@ -543,7 +544,7 @@ function PlaneMinigameRuntime(options) {
   this.shakeStrength = 0;
   this.paused = false;
   this.manualPause = false;
-  this.reviveUsed = false;
+  this.reviveCount = 0;
   this.revivePending = false;
   this.reviveHideDetectedAt = 0;
   this.destroyed = false;
@@ -931,7 +932,19 @@ PlaneMinigameRuntime.prototype.getGameOverButtons = function () {
 };
 
 PlaneMinigameRuntime.prototype.canReviveByShare = function () {
-  return this.state === 'over' && !this.reviveUsed && !!wx.shareAppMessage;
+  return this.state === 'over' && this.reviveCount < MAX_SHARE_REVIVES && !!wx.shareAppMessage;
+};
+
+PlaneMinigameRuntime.prototype.getRemainingShareRevives = function () {
+  return Math.max(0, MAX_SHARE_REVIVES - this.reviveCount);
+};
+
+PlaneMinigameRuntime.prototype.getShareReviveButtonLabel = function () {
+  if (this.revivePending) {
+    return '分享中...';
+  }
+
+  return '分享复活 x' + this.getRemainingShareRevives();
 };
 
 PlaneMinigameRuntime.prototype.recordLeaderboardEntry = function () {
@@ -1595,7 +1608,7 @@ PlaneMinigameRuntime.prototype.startGame = function () {
   this.shakeStrength = 0;
   this.paused = false;
   this.manualPause = false;
-  this.reviveUsed = false;
+  this.reviveCount = 0;
   this.revivePending = false;
   this.reviveHideDetectedAt = 0;
   this.lastTimestamp = 0;
@@ -1686,7 +1699,7 @@ PlaneMinigameRuntime.prototype.cancelShareRevive = function () {
 PlaneMinigameRuntime.prototype.reviveAfterShare = function () {
   var carriedBombs = this.bombs;
 
-  this.reviveUsed = true;
+  this.reviveCount += 1;
   this.revivePending = false;
   this.reviveHideDetectedAt = 0;
   this.state = 'running';
@@ -1729,7 +1742,7 @@ PlaneMinigameRuntime.prototype.reviveAfterShare = function () {
   this.friendRankRect = null;
   this.audio.stopAllEffects();
   this.audio.startBgm();
-  this.showBanner('分享复活', '#4a433d', 1.25);
+  this.showBanner('分享复活 ' + this.reviveCount + '/' + MAX_SHARE_REVIVES, '#4a433d', 1.25);
   this.triggerScreenFlash('#f5f1e8', 0.18);
   this.triggerShake(0.12, 4 * this.scale);
   this.emitUiChange();
@@ -2877,7 +2890,7 @@ PlaneMinigameRuntime.prototype.renderGameOver = function (ctx) {
   if (buttons.primary) {
     drawPencilButton(ctx, buttons.primary,
       this.canReviveByShare()
-        ? (this.revivePending ? '分享中...' : '分享复活')
+        ? this.getShareReviveButtonLabel()
         : '再来一局',
       {
         primary: true,

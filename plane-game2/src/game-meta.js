@@ -3,13 +3,13 @@
 var GAME_TITLE = '飞机大战';
 var GAME_SLOGAN = '滑动战机，火力全开！';
 var GAME_AUTHOR = 'Gerry';
-var GAME_DESCRIPTION = '经典街机风飞行射击小游戏。手指拖动战机自动开火，躲避敌机和弹幕，拾取双枪补给与炸弹空投，冲击更高分数。';
+var GAME_DESCRIPTION = '经典街机风飞行射击小游戏。手指拖动战机自动开火，躲避敌机和弹幕，拾取双枪补给与炸弹空投，冲击更高分数。每局最多可分享复活3次。';
 var COVER_DESCRIPTION_LINES = [
   '经典街机风飞行射击小游戏。',
   '手指拖动战机，自动开火。',
   '闪避敌机与弹幕，击落更多目标。',
   '拾取双枪补给和炸弹空投，',
-  '不断刷新你的最高分。'
+  '每局最多可分享复活3次。'
 ];
 
 function buildShareTitle(snapshot) {
