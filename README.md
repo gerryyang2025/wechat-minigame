@@ -1,12 +1,18 @@
 # WeChat Minigame Projects
 
-This repository maintains multiple WeChat game projects.
+This repository maintains multiple WeChat minigame projects.
 
 Each top-level directory is a standalone project.
 
 ## Projects
 
-- [`plane-game`](./plane-game/): a WeChat minigame arcade shooter with canvas rendering, touch controls, audio, and power-ups
+- [`plane-game`](./plane-game/): a sketch-style shooter with hand-drawn visuals, canvas rendering, touch controls, layered power-ups, and local plus friend leaderboard support
+- [`plane-game2`](./plane-game2/): a sprite-driven arcade shooter with packaged art and audio, HP-based survivability, local plus friend leaderboard support, and a more focused pickup set
+
+## Project Focus
+
+- Use `plane-game` if you want the sketch-style, paper-drawn variant with richer experimental mechanics.
+- Use `plane-game2` if you want the sprite-first arcade variant with tighter combat rules and packaged presentation assets.
 
 ## Conventions
 
@@ -22,6 +28,16 @@ Each top-level directory is a standalone project.
 4. Create `project.private.config.json` from the example file if needed.
 5. Run the project's local validation script before committing changes.
 
+## Common Structure
+
+- `game.js`: minigame bootstrap entry
+- `game.json`: minigame runtime configuration
+- `project.config.json`: WeChat DevTools project configuration
+- `src/`: gameplay runtime, rendering, input, audio, and support modules
+- `openDataContext/`: friend leaderboard rendering when the project supports open data context
+- `scripts/validate.js`: local syntax, JSON, and packaged-asset validation
+- `README.md`: project-specific setup and feature notes
+
 ## Adding a Project
 
 - Create a new top-level directory with a clear kebab-case name.
@@ -32,5 +48,5 @@ Each top-level directory is a standalone project.
 
 ## Documentation
 
-- [Contributing Guide](./CONTRIBUTING.md)
 - [plane-game README](./plane-game/README.md)
+- [plane-game2 README](./plane-game2/README.md)

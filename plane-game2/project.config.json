@@ -1,0 +1,88 @@
+{
+  "description": "plane-game2 arcade minigame project",
+  "setting": {
+    "urlCheck": true,
+    "es6": true,
+    "postcss": true,
+    "minified": true,
+    "newFeature": true,
+    "compileWorklet": false,
+    "uglifyFileName": false,
+    "uploadWithSourceMap": false,
+    "enhance": false,
+    "packNpmManually": false,
+    "packNpmRelationList": [],
+    "ignoreDevUnusedFiles": true,
+    "ignoreUploadUnusedFiles": true,
+    "localPlugins": false,
+    "disableUseStrict": false,
+    "useCompilerPlugins": false,
+    "condition": false,
+    "swc": false,
+    "disableSWC": true,
+    "babelSetting": {
+      "ignore": [],
+      "disablePlugins": [],
+      "outputPath": ""
+    },
+    "minifyWXSS": true,
+    "minifyWXML": true
+  },
+  "compileType": "minigame",
+  "libVersion": "3.15.1",
+  "appid": "wx879a9bf33c96b685",
+  "projectname": "plane-game2",
+  "simulatorPluginLibVersion": {},
+  "packOptions": {
+    "ignore": [
+      {
+        "value": "docs",
+        "type": "folder"
+      },
+      {
+        "value": "scripts",
+        "type": "folder"
+      },
+      {
+        "value": "README.md",
+        "type": "file"
+      },
+      {
+        "value": "LICENSE",
+        "type": "file"
+      },
+      {
+        "value": ".gitignore",
+        "type": "file"
+      },
+      {
+        "value": "project.private.config.json",
+        "type": "file"
+      },
+      {
+        "value": "project.private.config.example.json",
+        "type": "file"
+      },
+      {
+        "value": ".DS_Store",
+        "type": "file"
+      }
+    ],
+    "include": []
+  },
+  "watchOptions": {
+    "ignore": [
+      "docs/**",
+      "scripts/**",
+      "README.md",
+      "LICENSE",
+      ".gitignore",
+      "project.private.config.example.json"
+    ]
+  },
+  "editorSetting": {
+    "tabIndent": "insertSpaces",
+    "tabSize": 2
+  },
+  "isGameTourist": false
+}
