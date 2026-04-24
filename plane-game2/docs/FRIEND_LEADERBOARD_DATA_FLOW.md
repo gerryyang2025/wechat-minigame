@@ -41,6 +41,32 @@ The same key is used when:
 - writing the player's own best score
 - reading friend leaderboard values from cloud storage
 
+## Hosted Data Limits
+
+The current project stores only one hosted leaderboard key:
+
+- `plane_best_score`
+
+This means the project is far below the usual hosted-data limit for this feature.
+
+The documented limits for `wx.setUserCloudStorage()` are:
+
+- up to `128` key-value entries per user per game
+- each `key + value` pair must stay within `1KB`
+- each `key` must stay within `128` bytes
+
+With the current design, the project only writes a single best-score string, so it does not approach the limit in normal use.
+
+## How Writes Work
+
+The current leaderboard flow overwrites the same key instead of appending new records.
+
+That means:
+
+- the best-score entry does not keep growing over time
+- writing a new value for `plane_best_score` replaces the old one
+- the project does not need manual cleanup during normal score updates
+
 ## Main Domain Responsibilities
 
 The main domain runtime is responsible for:
@@ -64,6 +90,35 @@ Key runtime steps:
 - `ctx.drawImage(this.sharedCanvas, ...)` paints the rendered friend list into the leaderboard panel
 
 This means the current player's best score can still be refreshed in hosted data even when no friend records are available yet.
+
+## Manual Cleanup
+
+If you want to clear the hosted friend-leaderboard value for the current user, remove the key with:
+
+```js
+wx.removeUserCloudStorage({
+  keyList: ['plane_best_score']
+});
+```
+
+This removes only the current user's hosted value.
+
+It does not remove data for other users.
+
+## Resetting a Leaderboard Season
+
+If you need a fresh leaderboard season or a clean migration, the safest approach is usually to switch to a new score key instead of trying to clear everyone else's hosted data.
+
+Example:
+
+- old key: `plane_best_score`
+- new key: `plane_best_score_v2`
+
+With that approach:
+
+- old hosted data remains untouched
+- the runtime starts reading and writing the new key
+- the friend leaderboard effectively starts from a clean season
 
 ## Open Data Context Responsibilities
 
