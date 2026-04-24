@@ -18,9 +18,9 @@ var ENEMY_TYPES = {
     height: 32,
     score: 1000,
     health: 1,
-    speedMin: 220,
-    speedRange: 120,
-    speedPerLevel: 12,
+    speedMin: 182,
+    speedRange: 96,
+    speedPerLevel: 9,
     scaleMin: 0.9,
     scaleRange: 0.18,
     tilt: 0.22
@@ -30,9 +30,9 @@ var ENEMY_TYPES = {
     height: 48,
     score: 5000,
     health: 4,
-    speedMin: 170,
-    speedRange: 85,
-    speedPerLevel: 10,
+    speedMin: 142,
+    speedRange: 68,
+    speedPerLevel: 8,
     scaleMin: 0.92,
     scaleRange: 0.16,
     tilt: 0.12,
@@ -45,9 +45,9 @@ var ENEMY_TYPES = {
     height: 66,
     score: 20000,
     health: 10,
-    speedMin: 120,
-    speedRange: 55,
-    speedPerLevel: 8,
+    speedMin: 102,
+    speedRange: 44,
+    speedPerLevel: 6,
     scaleMin: 0.98,
     scaleRange: 0.12,
     tilt: 0.06,
@@ -576,7 +576,7 @@ function EnemyBullet(game, x, y, pattern, options) {
   this.x = x - this.width / 2;
   this.y = y;
   this.vx = options.vx || 0;
-  this.vy = options.vy || ((this.pattern === 'heavy' ? 300 : 270) * this.scale);
+  this.vy = options.vy || ((this.pattern === 'heavy' ? 252 : 228) * this.scale);
   this.angle = Math.atan2(this.vy, this.vx || 0) - Math.PI / 2;
   this.age = 0;
 }
@@ -886,7 +886,7 @@ function Enemy(game, sprite, level, type, options) {
   this.flightAmplitude = options.flightAmplitude === undefined
     ? this.width * (this.type === 'large' ? 0.46 : 0.58)
     : options.flightAmplitude;
-  this.flightFrequency = options.flightFrequency || (this.type === 'large' ? 0.9 : 1.4);
+  this.flightFrequency = options.flightFrequency || (this.type === 'large' ? 0.76 : 1.18);
   this.flightSeed = options.flightSeed === undefined ? Math.random() : options.flightSeed;
   this.horizontalDrift = options.horizontalDrift || 0;
   this.driftCurve = options.driftCurve || 2.4;
@@ -976,7 +976,7 @@ Enemy.prototype.getLargeFocusedVolley = function (centerX, shootY) {
   var player = this.game.player;
   var targetX = centerX;
   var targetY = this.game.height - 120 * this.game.scale;
-  var baseVy = 294 * this.game.scale;
+  var baseVy = 248 * this.game.scale;
   var timeToTarget = 1;
   var aimedVx = 0;
 
@@ -986,14 +986,14 @@ Enemy.prototype.getLargeFocusedVolley = function (centerX, shootY) {
   }
 
   timeToTarget = Math.max(0.28, (targetY - shootY) / Math.max(120, baseVy));
-  aimedVx = utils.clamp((targetX - centerX) / timeToTarget, -150 * this.game.scale, 150 * this.game.scale);
+  aimedVx = utils.clamp((targetX - centerX) / timeToTarget, -118 * this.game.scale, 118 * this.game.scale);
 
   return [
-    { offsetX: -this.width * 0.28, vx: -210 * this.game.scale, vy: 266 * this.game.scale, pattern: 'shard' },
-    { offsetX: -this.width * 0.14, vx: aimedVx - 64 * this.game.scale, vy: 282 * this.game.scale, pattern: 'shard' },
-    { offsetX: 0, vx: aimedVx, vy: 300 * this.game.scale, pattern: 'heavy' },
-    { offsetX: this.width * 0.14, vx: aimedVx + 64 * this.game.scale, vy: 282 * this.game.scale, pattern: 'shard' },
-    { offsetX: this.width * 0.28, vx: 210 * this.game.scale, vy: 266 * this.game.scale, pattern: 'shard' }
+    { offsetX: -this.width * 0.28, vx: -170 * this.game.scale, vy: 232 * this.game.scale, pattern: 'shard' },
+    { offsetX: -this.width * 0.14, vx: aimedVx - 52 * this.game.scale, vy: 244 * this.game.scale, pattern: 'shard' },
+    { offsetX: 0, vx: aimedVx, vy: 256 * this.game.scale, pattern: 'heavy' },
+    { offsetX: this.width * 0.14, vx: aimedVx + 52 * this.game.scale, vy: 244 * this.game.scale, pattern: 'shard' },
+    { offsetX: this.width * 0.28, vx: 170 * this.game.scale, vy: 232 * this.game.scale, pattern: 'shard' }
   ];
 };
 
@@ -1011,31 +1011,31 @@ Enemy.prototype.getVolleyPattern = function () {
         x: origin.x,
         y: origin.y,
         vx: 0,
-        vy: 278 * this.game.scale,
+        vy: 238 * this.game.scale,
         pattern: 'single'
       }
     ];
   }
 
   if (phase === 1) {
-    return [-120, 0, 120].map(function (speed, index, list) {
+    return [-92, 0, 92].map(function (speed, index, list) {
       return {
         x: origin.x + (index - (list.length - 1) / 2) * this.width * 0.12,
         y: origin.y,
         vx: speed * this.game.scale,
-        vy: (speed === 0 ? 304 : 260) * this.game.scale,
+        vy: (speed === 0 ? 270 : 228) * this.game.scale,
         pattern: speed === 0 ? 'heavy' : 'shard'
       };
     }, this);
   }
 
   if (phase === 2) {
-    return [-190, -95, 0, 95, 190].map(function (speed, index, list) {
+    return [-150, -74, 0, 74, 150].map(function (speed, index, list) {
       return {
         x: origin.x + (index - (list.length - 1) / 2) * this.width * 0.12,
         y: origin.y,
         vx: speed * this.game.scale,
-        vy: (speed === 0 ? 308 : 264) * this.game.scale,
+        vy: (speed === 0 ? 276 : 232) * this.game.scale,
         pattern: speed === 0 ? 'heavy' : 'shard'
       };
     }, this);
@@ -1053,12 +1053,12 @@ Enemy.prototype.getVolleyPattern = function () {
     });
   }
 
-  return [-240, -150, -70, 0, 70, 150, 240].map(function (speed, index, list) {
+  return [-188, -118, -56, 0, 56, 118, 188].map(function (speed, index, list) {
     return {
       x: origin.x + (index - (list.length - 1) / 2) * this.width * 0.12,
       y: origin.y,
       vx: speed * this.game.scale,
-      vy: (speed === 0 ? 312 : 258) * this.game.scale,
+      vy: (speed === 0 ? 280 : 228) * this.game.scale,
       pattern: speed === 0 ? 'heavy' : 'shard'
     };
   }, this);
