@@ -69,5 +69,6 @@ The script validates JavaScript syntax, JSON formatting, and the local 200 KiB p
 
 - [WeChat Minigame Requirements](./docs/WECHAT_MINIGAME_REQUIREMENTS.md)
 - [WeChat Minigame Release Checklist](./docs/WECHAT_MINIGAME_RELEASE_CHECKLIST.md)
+- [Friend Leaderboard Data Flow](./docs/FRIEND_LEADERBOARD_DATA_FLOW.md)
 - [Classic WeChat Plane Fighter Design Notes](./docs/CLASSIC_WECHAT_PLANE_FIGHTER_DESIGN.md)
 - [Arcade Asset Migration Plan](./docs/ARCADE_ASSET_MIGRATION_PLAN.md)

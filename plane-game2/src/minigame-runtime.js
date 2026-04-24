@@ -1024,6 +1024,7 @@ PlaneMinigameRuntime.prototype.syncCloudLeaderboard = function () {
 
 PlaneMinigameRuntime.prototype.openLeaderboard = function (mode) {
   if (mode === 'friends' && this.friendRankSupported) {
+    this.syncCloudLeaderboard();
     this.leaderboardMode = 'friends';
     this.friendRankDirty = true;
     this.friendRankError = '';
@@ -1781,7 +1782,6 @@ PlaneMinigameRuntime.prototype.handleTouchStart = function (event) {
         }
       }
 
-      this.toggleLeaderboard(false);
       return;
     }
 
@@ -2960,7 +2960,7 @@ PlaneMinigameRuntime.prototype.renderLeaderboard = function (ctx) {
     panelY + 42 * this.scale
   );
 
-  drawPencilButton(ctx, closeRect, '返回', {
+  drawPencilButton(ctx, closeRect, '关闭', {
     fontSize: 17 * this.scale
   });
 
@@ -3068,13 +3068,7 @@ PlaneMinigameRuntime.prototype.renderLeaderboard = function (ctx) {
   ctx.textAlign = 'center';
   ctx.fillStyle = SOFT_INK;
   setUiFont(ctx, 13 * this.scale, null);
-  ctx.fillText(
-    this.leaderboardMode === 'friends'
-      ? '当前展示开放数据域好友排行，点击任意位置返回'
-      : '点击任意位置返回结算页',
-    this.width / 2,
-    panelY + panelHeight - 24 * this.scale
-  );
+  ctx.fillText('点击右上角关闭', this.width / 2, panelY + panelHeight - 24 * this.scale);
   ctx.restore();
 };
 

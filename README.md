@@ -38,6 +38,25 @@ Each top-level directory is a standalone project.
 - `scripts/validate.js`: local syntax, JSON, and packaged-asset validation
 - `README.md`: project-specific setup and feature notes
 
+## Friend Leaderboard Flow
+
+Projects that support friend ranking use the WeChat open data context model:
+
+```text
+Player finishes a run
+  -> main runtime writes best score with wx.setUserCloudStorage()
+  -> main runtime opens the leaderboard overlay
+  -> main runtime sends showFriendLeaderboard to openDataContext
+  -> openDataContext reads friend data with wx.getFriendCloudStorage()
+  -> openDataContext renders into sharedCanvas
+  -> main runtime draws sharedCanvas inside the leaderboard panel
+```
+
+Detailed references:
+
+- [plane-game friend leaderboard flow](./plane-game/docs/FRIEND_LEADERBOARD_DATA_FLOW.md)
+- [plane-game2 friend leaderboard flow](./plane-game2/docs/FRIEND_LEADERBOARD_DATA_FLOW.md)
+
 ## Adding a Project
 
 - Create a new top-level directory with a clear kebab-case name.

@@ -852,6 +852,7 @@ PlaneMinigameRuntime.prototype.syncCloudLeaderboard = function () {
 
 PlaneMinigameRuntime.prototype.openLeaderboard = function (mode) {
   if (mode === 'friends' && this.friendRankSupported) {
+    this.syncCloudLeaderboard();
     this.leaderboardMode = 'friends';
     this.friendRankDirty = true;
     this.friendRankError = '';
@@ -1696,7 +1697,6 @@ PlaneMinigameRuntime.prototype.handleTouchStart = function (event) {
         }
       }
 
-      this.toggleLeaderboard(false);
       return;
     }
 
@@ -1716,7 +1716,7 @@ PlaneMinigameRuntime.prototype.handleTouchStart = function (event) {
     }
 
     if (gameOverButtons.tertiary && utils.pointInRect(touch.x, touch.y, gameOverButtons.tertiary)) {
-      this.openLeaderboard(this.friendRankSupported ? 'friends' : 'local');
+      this.openLeaderboard('local');
     }
     return;
   }
@@ -2782,7 +2782,7 @@ PlaneMinigameRuntime.prototype.renderGameOver = function (ctx) {
 
   if (buttons.tertiary) {
     this.leaderboardButtonRect = buttons.tertiary;
-    drawPencilButton(ctx, buttons.tertiary, this.friendRankSupported ? '好友排行' : '战绩排行', {
+    drawPencilButton(ctx, buttons.tertiary, '战绩排行', {
       fillStyle: 'rgba(244, 237, 227, 0.92)'
     });
   }
@@ -2817,7 +2817,7 @@ PlaneMinigameRuntime.prototype.renderLeaderboard = function (ctx) {
   this.leaderboardTabRects = tabRects;
 
   ctx.save();
-  ctx.fillStyle = 'rgba(238, 231, 220, 0.84)';
+  ctx.fillStyle = 'rgba(242, 236, 227, 0.96)';
   ctx.fillRect(0, 0, this.width, this.height);
   drawPaperPanel(ctx, panelX, panelY, panelWidth, panelHeight, 22, PANEL_FILL_ALT);
 
@@ -2940,16 +2940,6 @@ PlaneMinigameRuntime.prototype.renderLeaderboard = function (ctx) {
     }
   }
 
-  ctx.textAlign = 'center';
-  ctx.fillStyle = SOFT_INK;
-  setUiFont(ctx, 13 * this.scale, null);
-  ctx.fillText(
-    this.leaderboardMode === 'friends'
-      ? '当前展示开放数据域好友排行，点击任意位置返回'
-      : '点击任意位置返回结算页',
-    this.width / 2,
-    panelY + panelHeight - 24 * this.scale
-  );
   ctx.restore();
 };
 
