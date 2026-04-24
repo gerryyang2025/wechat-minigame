@@ -2829,28 +2829,23 @@ PlaneMinigameRuntime.prototype.renderLeaderboard = function (ctx) {
     this.width / 2,
     panelY + 42 * this.scale
   );
-  drawPanelUnderline(ctx, panelX + 28 * this.scale, panelY + 58 * this.scale, panelWidth - 56 * this.scale, 0.28);
 
-  drawPaperPanel(ctx, closeRect.x, closeRect.y, closeRect.width, closeRect.height, 999, 'rgba(245, 239, 229, 0.94)');
-  utils.drawSketchLine(ctx, closeRect.x + 10 * this.scale, closeRect.y + 10 * this.scale, closeRect.x + closeRect.width - 10 * this.scale, closeRect.y + closeRect.height - 10 * this.scale, {
-    strokeStyle: INK,
-    lineWidth: 1.3,
-    jitter: 0.2
-  });
-  utils.drawSketchLine(ctx, closeRect.x + closeRect.width - 10 * this.scale, closeRect.y + 10 * this.scale, closeRect.x + 10 * this.scale, closeRect.y + closeRect.height - 10 * this.scale, {
-    strokeStyle: INK,
-    lineWidth: 1.3,
-    jitter: 0.2
+  drawPencilButton(ctx, closeRect, '关闭', {
+    fontSize: 17 * this.scale
   });
 
   if (tabRects) {
     drawPencilButton(ctx, tabRects.local, '本机战绩', {
       primary: this.leaderboardMode === 'local',
-      fillStyle: this.leaderboardMode === 'local' ? PANEL_FILL_ALT : PANEL_FILL
+      fillStyle: 'rgba(244, 237, 227, 0.94)',
+      alpha: this.leaderboardMode === 'local' ? 1 : 0.72,
+      fontSize: 17 * this.scale
     });
     drawPencilButton(ctx, tabRects.friends, '好友排行', {
       primary: this.leaderboardMode === 'friends',
-      fillStyle: this.leaderboardMode === 'friends' ? PANEL_FILL_ALT : PANEL_FILL
+      fillStyle: 'rgba(244, 237, 227, 0.94)',
+      alpha: this.leaderboardMode === 'friends' ? 1 : 0.72,
+      fontSize: 17 * this.scale
     });
   }
 
@@ -2909,7 +2904,7 @@ PlaneMinigameRuntime.prototype.renderLeaderboard = function (ctx) {
 
     for (var i = 0; i < records.length; i += 1) {
       var record = records[i];
-      var itemY = panelY + 88 * this.scale + i * 46 * this.scale;
+      var itemY = contentY + 20 * this.scale + i * 46 * this.scale;
       var highlight = this.currentRunRank === i + 1;
 
       utils.drawSketchRoundRect(
@@ -2939,6 +2934,11 @@ PlaneMinigameRuntime.prototype.renderLeaderboard = function (ctx) {
       );
     }
   }
+
+  ctx.textAlign = 'center';
+  ctx.fillStyle = SOFT_INK;
+  setUiFont(ctx, 13 * this.scale, null);
+  ctx.fillText('点击右上角关闭', this.width / 2, panelY + panelHeight - 24 * this.scale);
 
   ctx.restore();
 };
