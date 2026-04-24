@@ -30,8 +30,8 @@
 - double-shot, firepower-upgrade, and shield states with remaining time shown in the HUD, with shield break using the same recovery rhythm as HP damage
 - a center HUD HP strip that shows current health and temporary invincibility status
 - timed slow-motion and score-boost states shown in the HUD
-- a local run leaderboard panel accessible from the game-over screen
-- an open-data-context friend leaderboard entry from the game-over screen
+- a shared leaderboard panel with local run records plus an open-data-context friend leaderboard entry
+- local/friend leaderboard tab switching inside the same overlay when friend ranking is supported
 - animated top-three medals inside the friend leaderboard panel
 - local persistence for best score and user settings
 - a lightweight validation script for JavaScript, JSON, and asset size checks

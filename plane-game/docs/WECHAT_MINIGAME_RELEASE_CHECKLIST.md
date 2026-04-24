@@ -66,6 +66,7 @@ Notes:
 - Verify player HP pips, non-lethal damage feedback, and the short invincibility window behave consistently across repeated hits.
 - Verify that share revive can be used up to three times in a single run and is unavailable after the third revive.
 - Verify that share revive grants a short recovery window and that shield break uses the same invincibility rhythm as normal HP damage.
+- Verify that the leaderboard overlay can switch cleanly between local records and friend ranking when friend ranking is supported.
 - Verify that supply-drop colors and silhouettes remain distinguishable on real devices, especially when labels are hidden due to size.
 - Verify that package size and ignored files are acceptable for upload.
 - Verify the largest packaged image/audio asset stays comfortably below the 200 KiB review threshold.

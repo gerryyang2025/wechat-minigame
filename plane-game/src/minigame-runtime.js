@@ -414,6 +414,7 @@ function PlaneMinigameRuntime(options) {
   this.leaderboardButtonRect = null;
   this.leaderboardCloseRect = null;
   this.leaderboardPanelRect = null;
+  this.leaderboardTabRects = null;
   this.openDataContext = null;
   this.sharedCanvas = null;
   this.pointerIdentifier = null;
@@ -668,6 +669,34 @@ PlaneMinigameRuntime.prototype.createLeaderboardCloseRect = function (panelX, pa
   };
 };
 
+PlaneMinigameRuntime.prototype.createLeaderboardTabRects = function (panelX, panelY, panelWidth) {
+  if (!this.friendRankSupported) {
+    return null;
+  }
+
+  var gap = 10 * this.scale;
+  var buttonWidth = Math.min(122 * this.scale, (panelWidth - 52 * this.scale - gap) / 2);
+  var buttonHeight = 36 * this.scale;
+  var totalWidth = buttonWidth * 2 + gap;
+  var startX = panelX + (panelWidth - totalWidth) / 2;
+  var y = panelY + 72 * this.scale;
+
+  return {
+    local: {
+      x: startX,
+      y: y,
+      width: buttonWidth,
+      height: buttonHeight
+    },
+    friends: {
+      x: startX + buttonWidth + gap,
+      y: y,
+      width: buttonWidth,
+      height: buttonHeight
+    }
+  };
+};
+
 PlaneMinigameRuntime.prototype.getPauseOverlayButtons = function () {
   var buttonWidth = Math.min(this.width * 0.62, 240);
   var buttonHeight = Math.max(52, 54 * this.scale);
@@ -781,6 +810,7 @@ PlaneMinigameRuntime.prototype.recordLeaderboardEntry = function () {
 PlaneMinigameRuntime.prototype.toggleLeaderboard = function (visible) {
   this.leaderboardVisible = visible === undefined ? !this.leaderboardVisible : !!visible;
   if (!this.leaderboardVisible) {
+    this.leaderboardTabRects = null;
     this.postOpenDataMessage('hideFriendLeaderboard');
   }
   this.render();
@@ -1499,6 +1529,7 @@ PlaneMinigameRuntime.prototype.startGame = function () {
   this.leaderboardButtonRect = null;
   this.leaderboardCloseRect = null;
   this.leaderboardPanelRect = null;
+  this.leaderboardTabRects = null;
   this.friendRankRect = null;
   this.showBanner('准备起飞', '#4a433d', 1.4);
   this.triggerScreenFlash('#f5f1e8', 0.12);
@@ -1622,6 +1653,7 @@ PlaneMinigameRuntime.prototype.reviveAfterShare = function () {
   this.leaderboardButtonRect = null;
   this.leaderboardCloseRect = null;
   this.leaderboardPanelRect = null;
+  this.leaderboardTabRects = null;
   this.friendRankRect = null;
   this.audio.stopAllEffects();
   this.audio.startBgm();
@@ -1647,6 +1679,23 @@ PlaneMinigameRuntime.prototype.handleTouchStart = function (event) {
 
   if (this.state === 'over') {
     if (this.leaderboardVisible) {
+      if (this.leaderboardCloseRect && utils.pointInRect(touch.x, touch.y, this.leaderboardCloseRect)) {
+        this.toggleLeaderboard(false);
+        return;
+      }
+
+      if (this.leaderboardTabRects) {
+        if (this.leaderboardTabRects.local && utils.pointInRect(touch.x, touch.y, this.leaderboardTabRects.local)) {
+          this.openLeaderboard('local');
+          return;
+        }
+
+        if (this.leaderboardTabRects.friends && utils.pointInRect(touch.x, touch.y, this.leaderboardTabRects.friends)) {
+          this.openLeaderboard('friends');
+          return;
+        }
+      }
+
       this.toggleLeaderboard(false);
       return;
     }
@@ -2746,10 +2795,11 @@ PlaneMinigameRuntime.prototype.renderLeaderboard = function (ctx) {
   var panelX = (this.width - panelWidth) / 2;
   var panelY = this.height * 0.18;
   var closeRect = this.createLeaderboardCloseRect(panelX, panelY, panelWidth);
+  var tabRects = this.createLeaderboardTabRects(panelX, panelY, panelWidth);
   var contentX = panelX + 18 * this.scale;
-  var contentY = panelY + 84 * this.scale;
+  var contentY = panelY + (tabRects ? 126 * this.scale : 84 * this.scale);
   var contentWidth = panelWidth - 36 * this.scale;
-  var contentHeight = panelHeight - 118 * this.scale;
+  var contentHeight = panelHeight - (tabRects ? 160 * this.scale : 118 * this.scale);
   var records = this.leaderboard.length ? this.leaderboard : [{
     score: 0,
     level: 0,
@@ -2764,6 +2814,7 @@ PlaneMinigameRuntime.prototype.renderLeaderboard = function (ctx) {
     height: panelHeight
   };
   this.leaderboardCloseRect = closeRect;
+  this.leaderboardTabRects = tabRects;
 
   ctx.save();
   ctx.fillStyle = 'rgba(238, 231, 220, 0.84)';
@@ -2791,6 +2842,17 @@ PlaneMinigameRuntime.prototype.renderLeaderboard = function (ctx) {
     lineWidth: 1.3,
     jitter: 0.2
   });
+
+  if (tabRects) {
+    drawPencilButton(ctx, tabRects.local, '本机战绩', {
+      primary: this.leaderboardMode === 'local',
+      fillStyle: this.leaderboardMode === 'local' ? PANEL_FILL_ALT : PANEL_FILL
+    });
+    drawPencilButton(ctx, tabRects.friends, '好友排行', {
+      primary: this.leaderboardMode === 'friends',
+      fillStyle: this.leaderboardMode === 'friends' ? PANEL_FILL_ALT : PANEL_FILL
+    });
+  }
 
   if (this.leaderboardMode === 'friends' && this.friendRankSupported && this.sharedCanvas) {
     utils.drawSketchRoundRect(

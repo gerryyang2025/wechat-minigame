@@ -105,7 +105,8 @@ The minigame build includes:
 - double-shot, firepower-upgrade, shield, bullet-clear, slow-time, and score-boost power-ups
 - independent bomb air drops plus compact manual bomb and bullet-clear inventory capsules
 - stronger power-up readability through differentiated silhouettes, clearer palette separation, and color-first recognition when labels would be too small
-- a local run leaderboard plus an open-data-context friend leaderboard entry
+- a shared leaderboard overlay with local run records plus an open-data-context friend leaderboard entry
+- local/friend leaderboard tab switching when the open data context is available
 - animated top-three badges inside the friend leaderboard view
 - floating score text, banners, screen flash, shake, and vibration feedback
 - best-score persistence through local storage
