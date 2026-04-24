@@ -17,6 +17,7 @@ var state = {
   records: [],
   ready: false,
   errorMessage: '',
+  errorDetail: '',
   animationTime: 0,
   lastTick: 0,
   animating: false,
@@ -367,7 +368,7 @@ function render() {
   ctx.clearRect(0, 0, state.width, state.height);
 
   if (state.errorMessage) {
-    renderMessage(state.errorMessage, '请稍后重新打开好友排行');
+    renderMessage(state.errorMessage, state.errorDetail || '请稍后重新打开好友排行');
     return;
   }
 
@@ -394,6 +395,20 @@ function render() {
   setFont(11, null);
   ctx.fillText('开放数据域好友分数', padding + 2, footerY + 20);
   ctx.restore();
+}
+
+function shouldTreatAsEmptyStateError(err) {
+  var message = err && err.errMsg ? String(err.errMsg).toLowerCase() : '';
+
+  if (!message) {
+    return false;
+  }
+
+  return message.indexOf('no data') !== -1
+    || message.indexOf('data empty') !== -1
+    || message.indexOf('empty data') !== -1
+    || message.indexOf('not found') !== -1
+    || message.indexOf('friend data empty') !== -1;
 }
 
 function stopAnimation() {
@@ -435,12 +450,14 @@ function loadFriendData() {
   if (!wx.getFriendCloudStorage) {
     state.ready = true;
     state.errorMessage = '当前环境不支持好友排行';
+    state.errorDetail = '';
     render();
     return;
   }
 
   state.ready = false;
   state.errorMessage = '';
+  state.errorDetail = '';
   render();
 
   wx.getFriendCloudStorage({
@@ -450,10 +467,19 @@ function loadFriendData() {
       state.ready = true;
       render();
     },
-    fail: function () {
+    fail: function (err) {
+      if (typeof console !== 'undefined' && console.error) {
+        console.error('[GameOpenDataContext] wx.getFriendCloudStorage failed', err);
+      }
       state.records = [];
       state.ready = true;
-      state.errorMessage = '好友战绩读取失败';
+      if (shouldTreatAsEmptyStateError(err)) {
+        state.errorMessage = '';
+        state.errorDetail = '';
+      } else {
+        state.errorMessage = '好友战绩读取失败';
+        state.errorDetail = err && err.errMsg ? String(err.errMsg) : '未知错误';
+      }
       render();
     }
   });
@@ -479,6 +505,7 @@ if (wx.onMessage) {
       stopAnimation();
       state.ready = false;
       state.errorMessage = '';
+      state.errorDetail = '';
       state.records = [];
       render();
     }
