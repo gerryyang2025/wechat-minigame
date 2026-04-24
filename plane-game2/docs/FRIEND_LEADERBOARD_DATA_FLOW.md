@@ -154,6 +154,22 @@ Common causes:
 
 In those cases, the project still keeps the local device leaderboard available.
 
+## Common Permission Error
+
+If the leaderboard shows an error similar to:
+
+- `getFriendCloudStorage: fail game appid no privacy api permission`
+
+the usual cause is not missing friend scores. It means the current minigame AppID does not yet have the required privacy-interface permission in the WeChat backend.
+
+Typical checks:
+
+1. Log in to the WeChat minigame admin console with the same AppID used by the project.
+2. Complete and publish the user privacy protection guide for the current version.
+3. Rebuild or reopen the game in DevTools or on a real device, then retry the friend leaderboard.
+
+In the current build, this case is shown as a dedicated permission error instead of being mixed with the empty-data state.
+
 ## Local Leaderboard vs Friend Leaderboard
 
 - Local leaderboard:

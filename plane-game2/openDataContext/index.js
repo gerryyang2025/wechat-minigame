@@ -412,6 +412,17 @@ function shouldTreatAsEmptyStateError(err) {
     || message.indexOf('friend data empty') !== -1;
 }
 
+function isPrivacyPermissionError(err) {
+  var message = err && err.errMsg ? String(err.errMsg).toLowerCase() : '';
+
+  if (!message) {
+    return false;
+  }
+
+  return message.indexOf('no privacy api permission') !== -1
+    || message.indexOf('privacy api permission') !== -1;
+}
+
 function stopAnimation() {
   state.animating = false;
   state.lastTick = 0;
@@ -477,6 +488,9 @@ function loadFriendData() {
       if (shouldTreatAsEmptyStateError(err)) {
         state.errorMessage = '';
         state.errorDetail = '';
+      } else if (isPrivacyPermissionError(err)) {
+        state.errorMessage = '好友排行未开通隐私权限';
+        state.errorDetail = '请在微信后台完成用户隐私保护指引配置后重试';
       } else {
         state.errorMessage = '好友战绩读取失败';
         state.errorDetail = err && err.errMsg ? String(err.errMsg) : '未知错误';
