@@ -1,0 +1,6 @@
+{
+  "deviceOrientation": "landscape",
+  "showStatusBar": false,
+  "lazyCodeLoading": "requiredComponents"
+}
+

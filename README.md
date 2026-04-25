@@ -8,11 +8,13 @@ Each top-level directory is a standalone project.
 
 - [`plane-game`](./plane-game/): a sketch-style shooter with hand-drawn visuals, canvas rendering, touch controls, layered power-ups, and local plus friend leaderboard support
 - [`plane-game2`](./plane-game2/): a sprite-driven arcade shooter with packaged art and audio, HP-based survivability, local plus friend leaderboard support, and a more focused pickup set
+- [`marvel-game`](./marvel-game/): a touch-first action-platformer adaptation with title, hero select, a three-stage campaign, chapter unlock flow, a local campaign archive overlay, richer sprite switching, hero-specific hit and landing effects, stage-specific set pieces, ground-plus-air enemy variety, encounter-gated ambush pacing, hazard-switch interactions, checkpoint relays, local progress tracking, action-rank result overlays, route guidance cues, extraction-beacon payoff, encounter-clear recovery beats, and a two-phase final boss with a finisher plus punish window
 
 ## Project Focus
 
 - Use `plane-game` if you want the sketch-style, paper-drawn variant with richer experimental mechanics.
 - Use `plane-game2` if you want the sprite-first arcade variant with tighter combat rules and packaged presentation assets.
+- Use `marvel-game` if you want a side-view action-platformer direction with hero skills and mobile touch controls.
 
 ## Conventions
 
@@ -69,3 +71,4 @@ Detailed references:
 
 - [plane-game README](./plane-game/README.md)
 - [plane-game2 README](./plane-game2/README.md)
+- [marvel-game README](./marvel-game/README.md)

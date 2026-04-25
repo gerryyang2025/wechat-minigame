@@ -1,0 +1,56 @@
+{
+  "appid": "touristappid",
+  "projectname": "marvel-game",
+  "compileType": "minigame",
+  "libVersion": "latest",
+  "simulatorType": "wechat",
+  "condition": {},
+  "setting": {
+    "es6": true,
+    "enhance": true,
+    "minified": true,
+    "postcss": true,
+    "urlCheck": false,
+    "coverView": true,
+    "showShadowRootInWxmlPanel": true,
+    "compileHotReLoad": false,
+    "uploadWithSourceMap": false
+  },
+  "packOptions": {
+    "ignore": [
+      {
+        "type": "glob",
+        "value": "docs/**"
+      },
+      {
+        "type": "glob",
+        "value": "scripts/**"
+      },
+      {
+        "type": "glob",
+        "value": "README.md"
+      },
+      {
+        "type": "glob",
+        "value": ".gitignore"
+      },
+      {
+        "type": "glob",
+        "value": "project.private.config.example.json"
+      }
+    ]
+  },
+  "watchOptions": {
+    "ignore": [
+      {
+        "type": "glob",
+        "value": "docs/**"
+      },
+      {
+        "type": "glob",
+        "value": "scripts/**"
+      }
+    ]
+  }
+}
+

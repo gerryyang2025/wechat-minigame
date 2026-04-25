@@ -1,0 +1,124 @@
+{
+  "appid": "wx879a9bf33c96b685",
+  "projectname": "marvel-game",
+  "compileType": "game",
+  "libVersion": "latest",
+  "simulatorType": "wechat",
+  "condition": {},
+  "setting": {
+    "es6": true,
+    "enhance": true,
+    "minified": true,
+    "postcss": true,
+    "urlCheck": false,
+    "coverView": true,
+    "showShadowRootInWxmlPanel": true,
+    "compileHotReLoad": false,
+    "uploadWithSourceMap": false,
+    "compileWorklet": false,
+    "uglifyFileName": false,
+    "packNpmManually": false,
+    "packNpmRelationList": [],
+    "minifyWXSS": true,
+    "minifyWXML": true,
+    "localPlugins": false,
+    "disableUseStrict": false,
+    "useCompilerPlugins": false,
+    "condition": false,
+    "swc": false,
+    "disableSWC": true,
+    "babelSetting": {
+      "ignore": [],
+      "disablePlugins": [],
+      "outputPath": ""
+    }
+  },
+  "packOptions": {
+    "ignore": [
+      {
+        "value": "docs/**",
+        "type": "glob"
+      },
+      {
+        "value": "scripts/**",
+        "type": "glob"
+      },
+      {
+        "value": "README.md",
+        "type": "glob"
+      },
+      {
+        "value": "WECHAT_ADAPTATION_PLAN.md",
+        "type": "glob"
+      },
+      {
+        "value": ".gitignore",
+        "type": "glob"
+      },
+      {
+        "value": "project.private.config.example.json",
+        "type": "glob"
+      },
+      {
+        "value": "project.private.config.json",
+        "type": "glob"
+      },
+      {
+        "value": "audio/level1_bgm.mp3",
+        "type": "glob"
+      },
+      {
+        "value": "audio/level2_bgm.mp3",
+        "type": "glob"
+      },
+      {
+        "value": "audio/level3_bgm.mp3",
+        "type": "glob"
+      },
+      {
+        "value": "audio/jump_sfx.mp3",
+        "type": "glob"
+      },
+      {
+        "value": "audio/melee_hit_sfx.mp3",
+        "type": "glob"
+      },
+      {
+        "value": "audio/ranged_shot_sfx.mp3",
+        "type": "glob"
+      },
+      {
+        "value": "audio/damage_sfx.mp3",
+        "type": "glob"
+      },
+      {
+        "value": "audio/death_sfx.mp3",
+        "type": "glob"
+      },
+      {
+        "value": "audio/explosion_sfx.mp3",
+        "type": "glob"
+      },
+      {
+        "value": "audio/ultimate_sfx.mp3",
+        "type": "glob"
+      },
+      {
+        "value": "audio/thanos_roar_sfx.mp3",
+        "type": "glob"
+      },
+      {
+        "value": "audio/boss_finisher_sfx.mp3",
+        "type": "glob"
+      },
+      {
+        "value": "audio/boss_weak_hit_sfx.mp3",
+        "type": "glob"
+      }
+    ],
+    "include": []
+  },
+  "simulatorPluginLibVersion": {},
+  "isGameTourist": false,
+  "editorSetting": {}
+}
