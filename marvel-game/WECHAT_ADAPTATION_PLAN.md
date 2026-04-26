@@ -270,34 +270,24 @@ Target:
 - hero and enemy multi-frame animation switching
 - chapter transition overlays between levels
 - a fuller boss second phase with telegraphed special attacks
-- stage hazards that fit side-view mobile readability
-- linked switches that temporarily suppress selected hazards
 - stage-specific set pieces that help each chapter read as a different combat space
 - enemy encounter variety through skirmisher, artillery, and brute sentry behaviors
 - aerial drone patrols so later stages are not limited to ground-only pressure
 - encounter-gated ambush groups so mixed enemy pressure ramps in readable beats instead of all spawning at once
 - encounter-complete feedback and small recovery beats so touch players can read when a pressure spike has actually ended
 - a lightweight encounter HUD chip so touch players can tell which ambush is active and how many enemies remain
-- mid-stage checkpoint relays plus a checkpoint-continue fallback so long touch sessions are less punishing
 - result overlays that grade each chapter clear so players get stronger mobile-readable feedback than a simple win/lose card
-- local campaign-progress persistence plus per-hero best-rank summaries so repeat runs feel like a real minigame campaign instead of isolated slices
-- chapter-unlock selection in the hero screen so persisted progress changes how the next run begins
-- unlocked chapter chips that carry per-hero best-rank and best-time summaries
-- title/result meta-feedback that makes next unlocks, full clears, and new records explicit on mobile
-- a title-level campaign archive overlay so players can review per-hero chapter records without opening gameplay flow screens
 - clearer hit, hurt, knockback, landing, hero hurt/fall, enemy stagger/fall, and death presentation
 - hero-specific hit effects so each skill family reads differently on mobile
 - hero-specific landing effects so skill impact zones read before and during payoff
 - gameplay-layer screen shake
-- linked hazard suppression feedback
 - a short boss weakened window after the finisher to reward successful survival
 - a short stagger buffer after the weakened window so the punish phase stays readable on touch devices
-- enemy-hazard combo layouts that change pressure when linked traps are active
 - a clearer weakened-state visual package so the punish window reads on mobile
-- route guidance cues that point the player toward switches, targets, bosses, or extraction
+- route guidance cues that point the player toward targets, bosses, or punish windows
 - chapter micro-events that fire short callouts during traversal and boss threshold shifts
 - first-contact combat callouts that explain new enemy roles when they first enter play
-- a temporary boss arena lock during the final duel plus a more readable extraction beacon once exits are truly open
+- a temporary boss arena lock during the final duel
 
 Purpose:
 
@@ -314,12 +304,9 @@ Target:
 - mobile HUD readability
 - WeChat lifecycle handling
 - final pass on stage-transition pacing and combat readability
-- final balancing of trap timing, switch placement, and boss weakened-window fairness
-- final tuning for checkpoint placement, checkpoint recovery value, and extraction readability
+- final balancing of boss weakened-window fairness and enemy pressure
 - final tuning for chapter-grade thresholds so clear ranks match real mobile difficulty
-- final tuning for progress-summary density on smaller phones
-- final tuning for chapter-chip spacing, lock clarity, and replay flow on smaller phones
-- final tuning for archive-panel density and record-row readability on smaller phones
+- final tuning for hero-select spacing and smaller-phone readability
 
 Purpose:
 

@@ -45,31 +45,28 @@ function MarvelMinigameRuntime(options) {
   this.hazards = [];
   this.levelEvents = [];
   this.projectiles = [];
-  this.effects = [];
   this.cameraX = 0;
   this.elapsedTime = 0;
   this.levelStartedAt = 0;
   this.levelResultTime = 0;
-  this.transitionMessage = '';
   this.transitionLevelIndex = -1;
   this.transitionLevel = null;
   this.transitionStartedAt = 0;
   this.transitionDuration = 0;
-  this.transitionHint = '';
   this.transitionReason = '';
   this.systemPaused = false;
   this.announcements = [];
   this.lastRecordUpdate = null;
   this.encounterHintsShown = {};
-  this.encounterBurstsShown = {};
   this.encounterStates = {};
   this.levelStats = null;
   this.checkpoints = [];
   this.activeCheckpoint = null;
   this.checkpointContinueUsed = false;
   this.bossIntroShown = false;
-  this.bossArenaLockActive = false;
-  this.bossArenaLockX = 0;
+  this.bossArenaActive = false;
+  this.bossArenaActivatedAt = 0;
+  this.thorUltimateStrike = null;
   this.shakeUntil = 0;
   this.shakeIntensity = 0;
   this.shakeSeed = 0;
@@ -232,13 +229,7 @@ MarvelMinigameRuntime.prototype.getShakeOffset = function () {
 };
 
 MarvelMinigameRuntime.prototype.pushAnnouncement = function (title, subtitle, color, duration) {
-  this.announcements.push({
-    title: title,
-    subtitle: subtitle || '',
-    color: color || ACCENT,
-    duration: duration || 1.8,
-    age: 0
-  });
+  return;
 };
 
 MarvelMinigameRuntime.prototype.getHeroPortraitKey = function (heroKey) {
@@ -314,6 +305,9 @@ MarvelMinigameRuntime.prototype.getEnemyAnimatedSprite = function (enemy) {
     if (enemy.isDead || pose === 'dead') {
       return this.getAnimatedImage(['thanosDie1', 'thanosDie2'], 7, 170);
     }
+    if (pose === 'hurt') {
+      return this.getAnimatedImage(['thanosIdle', 'thanosIdle2'], 6, 30);
+    }
     if (pose === 'dash') {
       return this.getAnimatedImage(['thanosJump1', 'thanosJump2'], 12, 130);
     }
@@ -335,6 +329,9 @@ MarvelMinigameRuntime.prototype.getEnemyAnimatedSprite = function (enemy) {
 
   if (enemy.isDead || pose === 'dead') {
     return this.getAnimatedImage(['sentryDie1', 'sentryDie2'], 8, 90);
+  }
+  if (pose === 'hurt') {
+    return this.getAnimatedImage(['sentryIdle', 'sentryIdle2'], 6, 30);
   }
   if (pose === 'attack') {
     return this.getAnimatedImage(['sentryAttack1_1', 'sentryAttack1_2'], 10, 20);
@@ -390,30 +387,7 @@ MarvelMinigameRuntime.prototype.drawImageFit = function (ctx, image, x, y, width
 };
 
 MarvelMinigameRuntime.prototype.drawBannerOverlay = function (ctx) {
-  if (!this.announcements.length) {
-    return;
-  }
-
-  var item = this.announcements[0];
-  var progress = item.age / item.duration;
-  var fade = progress < 0.15 ? progress / 0.15 : (progress > 0.78 ? (1 - progress) / 0.22 : 1);
-  var panelWidth = 320 * this.scale;
-  var panelHeight = 84 * this.scale;
-  var panelX = this.width / 2 - panelWidth / 2;
-  var panelY = 36 * this.scale + (1 - fade) * -28 * this.scale;
-
-  ctx.save();
-  ctx.globalAlpha = utils.clamp(fade, 0, 1);
-  utils.drawPanel(ctx, panelX, panelY, panelWidth, panelHeight, {
-    fillStyle: 'rgba(8, 13, 28, 0.88)',
-    strokeStyle: item.color,
-    radius: 20
-  });
-  utils.setTextStyle(ctx, 18 * this.scale, 'bold', INK, 'center', 'middle');
-  ctx.fillText(item.title, this.width / 2, panelY + 28 * this.scale);
-  utils.setTextStyle(ctx, 12 * this.scale, null, SOFT_INK, 'center', 'middle');
-  ctx.fillText(item.subtitle, this.width / 2, panelY + 54 * this.scale);
-  ctx.restore();
+  return;
 };
 
 MarvelMinigameRuntime.prototype.handleTouchStart = function (event) {
@@ -425,31 +399,10 @@ MarvelMinigameRuntime.prototype.handleTouchStart = function (event) {
     point = utils.resolveTouchPoint(touches[i]);
 
     if (this.state === 'title') {
-      if (utils.rectContainsPoint(this.getTitleArchiveRect(), point.x, point.y)) {
-        this.archiveHeroIndex = this.heroIndex;
-        this.resetTouchState();
-        this.state = 'archive';
-        continue;
-      }
-
       if (utils.rectContainsPoint(this.getTitleButtonRect(), point.x, point.y)) {
-        this.selectedLevelIndex = utils.clamp(this.selectedLevelIndex, 0, this.getUnlockedLevelMaxIndex());
-        this.syncSelectionProgress();
+        this.selectedLevelIndex = 0;
         this.state = 'select';
       }
-      continue;
-    }
-
-    if (this.state === 'archive') {
-      if (utils.rectContainsPoint(this.getArchiveCloseRect(), point.x, point.y)) {
-        this.state = 'title';
-        continue;
-      }
-
-      if (this.trySelectArchiveHeroAt(point.x, point.y)) {
-        continue;
-      }
-
       continue;
     }
 
@@ -458,14 +411,9 @@ MarvelMinigameRuntime.prototype.handleTouchStart = function (event) {
         continue;
       }
 
-      if (this.trySelectStageAt(point.x, point.y)) {
-        continue;
-      }
-
       if (utils.rectContainsPoint(this.getSelectStartRect(), point.x, point.y)) {
-        this.selectedLevelIndex = utils.clamp(this.selectedLevelIndex, 0, this.getUnlockedLevelMaxIndex());
-        this.syncSelectionProgress();
-        this.beginLevelTransition(this.selectedLevelIndex, 'start');
+        this.selectedLevelIndex = 0;
+        this.beginLevelTransition(0, 'start');
       }
       continue;
     }
@@ -594,7 +542,7 @@ MarvelMinigameRuntime.prototype.tryTriggerActionTouch = function (point) {
 MarvelMinigameRuntime.prototype.getTitleButtonRect = function () {
   return {
     x: this.width / 2 - 92 * this.scale,
-    y: this.height * 0.7,
+    y: this.height * 0.64,
     width: 184 * this.scale,
     height: 50 * this.scale
   };
@@ -606,7 +554,7 @@ MarvelMinigameRuntime.prototype.getTitlePanelRect = function () {
     x: this.width / 2 - panelWidth / 2,
     y: this.height * 0.16,
     width: panelWidth,
-    height: 272 * this.scale
+    height: 212 * this.scale
   };
 };
 
@@ -628,49 +576,39 @@ MarvelMinigameRuntime.prototype.getSelectableCampaign = function () {
 
 MarvelMinigameRuntime.prototype.getUnlockedLevelMaxIndex = function () {
   var campaign = this.getSelectableCampaign();
-  var progress = this.getCampaignProgressSummary();
-  return utils.clamp(progress.clearedCount, 0, Math.max(0, campaign.length - 1));
+  return Math.max(0, campaign.length - 1);
 };
 
 MarvelMinigameRuntime.prototype.getCharacterSelectLayout = function () {
-  var titleBottom = 96 * this.scale;
-  var heroHeight = 150 * this.scale;
-  var heroStageGap = 18 * this.scale;
-  var stageHeight = 48 * this.scale;
-  var stageButtonGap = 14 * this.scale;
-  var buttonHeight = 40 * this.scale;
-  var bottomMargin = 20 * this.scale;
-  var heroY = 108 * this.scale;
+  var titleBottom = 102 * this.scale;
+  var heroHeight = 146 * this.scale;
+  var heroButtonGap = 14 * this.scale;
+  var noteHeight = 20 * this.scale;
+  var noteGap = 8 * this.scale;
+  var buttonHeight = 42 * this.scale;
+  var bottomMargin = 22 * this.scale;
+  var heroY = 112 * this.scale;
   var availableHeight = this.height - titleBottom - bottomMargin;
-  var neededHeight = heroHeight + heroStageGap + stageHeight + stageButtonGap + buttonHeight;
+  var neededHeight = heroHeight + heroButtonGap + noteHeight + noteGap + buttonHeight;
   var overflow;
-  var bottomOverflow;
-  var stageY;
+  var noteY;
   var buttonY;
 
   if (neededHeight > availableHeight) {
     overflow = neededHeight - availableHeight;
-    heroHeight = Math.max(132 * this.scale, heroHeight - overflow * 0.6);
-    heroStageGap = Math.max(8 * this.scale, heroStageGap - overflow * 0.12);
-    stageHeight = Math.max(42 * this.scale, stageHeight - overflow * 0.15);
-    stageButtonGap = Math.max(10 * this.scale, stageButtonGap - overflow * 0.08);
+    heroHeight = Math.max(132 * this.scale, heroHeight - overflow * 0.72);
+    heroButtonGap = Math.max(10 * this.scale, heroButtonGap - overflow * 0.18);
+    noteGap = Math.max(6 * this.scale, noteGap - overflow * 0.1);
   }
 
-  stageY = heroY + heroHeight + heroStageGap;
-  buttonY = stageY + stageHeight + stageButtonGap;
-  bottomOverflow = buttonY + buttonHeight + bottomMargin - this.height;
-
-  if (bottomOverflow > 0) {
-    heroY = Math.max(titleBottom + 6 * this.scale, heroY - bottomOverflow);
-    stageY = heroY + heroHeight + heroStageGap;
-    buttonY = stageY + stageHeight + stageButtonGap;
-  }
+  noteY = heroY + heroHeight + heroButtonGap;
+  buttonY = noteY + noteHeight + noteGap;
 
   return {
     heroY: heroY,
     heroHeight: heroHeight,
-    stageY: stageY,
-    stageHeight: stageHeight,
+    noteY: noteY,
+    noteHeight: noteHeight,
     buttonY: buttonY,
     buttonHeight: buttonHeight
   };
@@ -702,27 +640,7 @@ MarvelMinigameRuntime.prototype.getHeroCardRects = function () {
 };
 
 MarvelMinigameRuntime.prototype.getStageChipRects = function () {
-  var layout = this.getCharacterSelectLayout();
-  var campaign = this.getSelectableCampaign();
-  var chipWidth = 108 * this.scale;
-  var chipHeight = layout.stageHeight;
-  var gap = 10 * this.scale;
-  var totalWidth = campaign.length * chipWidth + (campaign.length - 1) * gap;
-  var startX = (this.width - totalWidth) / 2;
-  var y = layout.stageY;
-  var rects = [];
-  var i;
-
-  for (i = 0; i < campaign.length; i += 1) {
-    rects.push({
-      x: startX + i * (chipWidth + gap),
-      y: y,
-      width: chipWidth,
-      height: chipHeight
-    });
-  }
-
-  return rects;
+  return [];
 };
 
 MarvelMinigameRuntime.prototype.getSelectStartRect = function () {
@@ -861,31 +779,49 @@ MarvelMinigameRuntime.prototype.getActionButtonRects = function () {
 };
 
 MarvelMinigameRuntime.prototype.getPauseMenuButtons = function () {
+  var panelWidth = 360 * this.scale;
+  var panelHeight = 312 * this.scale;
+  var panelX = this.width / 2 - panelWidth / 2;
+  var panelY = this.height / 2 - panelHeight / 2;
+  var buttonWidth = 196 * this.scale;
+  var buttonHeight = 40 * this.scale;
+  var buttonX = this.width / 2 - buttonWidth / 2;
+  var firstButtonY = panelY + 138 * this.scale;
+  var buttonGap = 12 * this.scale;
+
   return {
+    panel: {
+      x: panelX,
+      y: panelY,
+      width: panelWidth,
+      height: panelHeight
+    },
     resume: {
-      x: this.width / 2 - 118 * this.scale,
-      y: this.height / 2 + 48 * this.scale,
-      width: 236 * this.scale,
-      height: 52 * this.scale
+      x: buttonX,
+      y: firstButtonY,
+      width: buttonWidth,
+      height: buttonHeight
     },
     restart: {
-      x: this.width / 2 - 118 * this.scale,
-      y: this.height / 2 + 112 * this.scale,
-      width: 236 * this.scale,
-      height: 52 * this.scale
+      x: buttonX,
+      y: firstButtonY + buttonHeight + buttonGap,
+      width: buttonWidth,
+      height: buttonHeight
     },
     select: {
-      x: this.width / 2 - 118 * this.scale,
-      y: this.height / 2 + 176 * this.scale,
-      width: 236 * this.scale,
-      height: 52 * this.scale
+      x: buttonX,
+      y: firstButtonY + (buttonHeight + buttonGap) * 2,
+      width: buttonWidth,
+      height: buttonHeight
     }
   };
 };
 
 MarvelMinigameRuntime.prototype.getResultOverlayLayout = function (victory) {
   var hasContinue = this.canContinueFromCheckpoint();
-  var panelWidth = 400 * this.scale;
+  var hasNext = victory && this.hasNextLevel();
+  var finalVictory = victory && !hasNext;
+  var panelWidth = 360 * this.scale;
   var panelHeight;
   var panelY;
   var buttonWidth;
@@ -894,12 +830,12 @@ MarvelMinigameRuntime.prototype.getResultOverlayLayout = function (victory) {
   var restartY;
 
   if (!victory) {
-    panelHeight = hasContinue ? 346 * this.scale : 298 * this.scale;
+    panelHeight = hasContinue ? 286 * this.scale : 242 * this.scale;
     panelY = this.height / 2 - panelHeight / 2;
-    buttonWidth = 220 * this.scale;
-    buttonHeight = 40 * this.scale;
+    buttonWidth = 196 * this.scale;
+    buttonHeight = 38 * this.scale;
     buttonX = this.width / 2 - buttonWidth / 2;
-    restartY = panelY + (hasContinue ? 248 : 200) * this.scale;
+    restartY = panelY + (hasContinue ? 190 : 156) * this.scale;
     return {
       panelX: this.width / 2 - panelWidth / 2,
       panelY: panelY,
@@ -908,7 +844,7 @@ MarvelMinigameRuntime.prototype.getResultOverlayLayout = function (victory) {
       buttons: {
         continue: {
           x: buttonX,
-          y: panelY + 200 * this.scale,
+          y: panelY + 146 * this.scale,
           width: buttonWidth,
           height: buttonHeight
         },
@@ -920,7 +856,7 @@ MarvelMinigameRuntime.prototype.getResultOverlayLayout = function (victory) {
         },
         select: {
           x: buttonX,
-          y: restartY + 48 * this.scale,
+          y: restartY + 46 * this.scale,
           width: buttonWidth,
           height: buttonHeight
         }
@@ -928,8 +864,10 @@ MarvelMinigameRuntime.prototype.getResultOverlayLayout = function (victory) {
     };
   }
 
-  panelHeight = hasContinue ? 376 * this.scale : 332 * this.scale;
+  panelHeight = hasNext ? 300 * this.scale : (finalVictory ? 286 * this.scale : 344 * this.scale);
   panelY = this.height / 2 - panelHeight / 2;
+  buttonWidth = hasNext ? 220 * this.scale : 196 * this.scale;
+  buttonHeight = hasNext ? 44 * this.scale : 38 * this.scale;
   return {
     panelX: this.width / 2 - panelWidth / 2,
     panelY: panelY,
@@ -937,22 +875,22 @@ MarvelMinigameRuntime.prototype.getResultOverlayLayout = function (victory) {
     panelHeight: panelHeight,
     buttons: {
       continue: {
-        x: this.width / 2 - 118 * this.scale,
-        y: this.height / 2 + 152 * this.scale,
-        width: 236 * this.scale,
-        height: 52 * this.scale
+        x: 0,
+        y: 0,
+        width: 0,
+        height: 0
       },
       restart: {
-        x: this.width / 2 - 118 * this.scale,
-        y: this.height / 2 + (hasContinue ? 216 : 152) * this.scale,
-        width: 236 * this.scale,
-        height: 52 * this.scale
+        x: this.width / 2 - buttonWidth / 2,
+        y: panelY + (finalVictory ? 212 : 228) * this.scale,
+        width: buttonWidth,
+        height: buttonHeight
       },
       select: {
-        x: this.width / 2 - 118 * this.scale,
-        y: this.height / 2 + (hasContinue ? 280 : 216) * this.scale,
-        width: 236 * this.scale,
-        height: 52 * this.scale
+        x: (hasNext || finalVictory) ? 0 : (this.width / 2 - 98 * this.scale),
+        y: (hasNext || finalVictory) ? 0 : (panelY + 278 * this.scale),
+        width: (hasNext || finalVictory) ? 0 : (196 * this.scale),
+        height: (hasNext || finalVictory) ? 0 : (38 * this.scale)
       }
     }
   };
@@ -1020,15 +958,15 @@ MarvelMinigameRuntime.prototype.handlePauseMenuTap = function (x, y) {
 
   if (utils.rectContainsPoint(buttons.select, x, y)) {
     this.state = 'select';
-    this.selectedLevelIndex = utils.clamp(this.selectedLevelIndex, 0, this.getUnlockedLevelMaxIndex());
+    this.selectedLevelIndex = 0;
     this.levelIndex = 0;
-    this.syncSelectionProgress();
     this.resetTouchState();
   }
 };
 
 MarvelMinigameRuntime.prototype.handleResultMenuTap = function (x, y) {
   var buttons = this.getResultButtons();
+  var finalVictory = this.state === 'victory' && !this.hasNextLevel();
 
   if (this.canContinueFromCheckpoint() && utils.rectContainsPoint(buttons.continue, x, y)) {
     this.reviveFromCheckpoint();
@@ -1038,8 +976,11 @@ MarvelMinigameRuntime.prototype.handleResultMenuTap = function (x, y) {
   if (utils.rectContainsPoint(buttons.restart, x, y)) {
     if (this.state === 'victory' && this.hasNextLevel()) {
       this.beginLevelTransition(this.levelIndex + 1, 'advance');
-    } else if (this.state === 'victory') {
-      this.beginLevelTransition(0, 'campaign-reset');
+    } else if (finalVictory) {
+      this.state = 'select';
+      this.selectedLevelIndex = 0;
+      this.levelIndex = 0;
+      this.resetTouchState();
     } else {
       this.beginLevelTransition(this.levelIndex, 'restart');
     }
@@ -1048,9 +989,8 @@ MarvelMinigameRuntime.prototype.handleResultMenuTap = function (x, y) {
 
   if (utils.rectContainsPoint(buttons.select, x, y)) {
     this.state = 'select';
-    this.selectedLevelIndex = utils.clamp(this.selectedLevelIndex, 0, this.getUnlockedLevelMaxIndex());
+    this.selectedLevelIndex = 0;
     this.levelIndex = 0;
-    this.syncSelectionProgress();
     this.resetTouchState();
   }
 };
@@ -1084,20 +1024,18 @@ MarvelMinigameRuntime.prototype.beginLevelTransition = function (levelIndex, rea
   this.transitionStartedAt = Date.now();
   this.transitionDuration = reason === 'advance' ? 1700 : 1450;
   this.transitionReason = reason || 'start';
-  this.transitionHint = this.transitionLevel.objective || '准备下一任务';
-  this.transitionMessage = '';
   this.lastRecordUpdate = null;
   this.levelEvents = [];
   this.encounterHintsShown = {};
-  this.encounterBurstsShown = {};
   this.encounterStates = {};
   this.levelStats = null;
   this.checkpoints = [];
   this.activeCheckpoint = null;
   this.checkpointContinueUsed = false;
   this.bossIntroShown = false;
-  this.bossArenaLockActive = false;
-  this.bossArenaLockX = 0;
+  this.bossArenaActive = false;
+  this.bossArenaActivatedAt = 0;
+  this.thorUltimateStrike = null;
   this.resetTouchState();
   this.audio.stopBgm();
   this.state = 'transition';
@@ -1122,7 +1060,6 @@ MarvelMinigameRuntime.prototype.startLevel = function (levelIndex) {
     }, event);
   });
   this.encounterHintsShown = {};
-  this.encounterBurstsShown = {};
   this.encounterStates = this.createEncounterStates();
   this.levelStats = {
     damageTaken: 0,
@@ -1134,21 +1071,19 @@ MarvelMinigameRuntime.prototype.startLevel = function (levelIndex) {
   this.activeCheckpoint = null;
   this.checkpointContinueUsed = false;
   this.bossIntroShown = false;
-  this.bossArenaLockActive = false;
-  this.bossArenaLockX = 0;
+  this.bossArenaActive = false;
+  this.bossArenaActivatedAt = 0;
+  this.thorUltimateStrike = null;
   this.projectiles = [];
-  this.effects = [];
   this.cameraX = 0;
   this.elapsedTime = 0;
   this.levelStartedAt = Date.now();
   this.levelResultTime = 0;
-  this.transitionMessage = '';
   this.lastRecordUpdate = null;
   this.transitionLevelIndex = -1;
   this.transitionLevel = null;
   this.transitionStartedAt = 0;
   this.transitionDuration = 0;
-  this.transitionHint = '';
   this.transitionReason = '';
   this.resetTouchState();
   this.pushAnnouncement(this.level.chapterLabel, this.level.name, ACCENT, 2.1);
@@ -1203,35 +1138,15 @@ MarvelMinigameRuntime.prototype.createPlayer = function (hero) {
 };
 
 MarvelMinigameRuntime.prototype.createCheckpoints = function () {
-  return (this.level.checkpoints || []).map(function (checkpoint, index) {
-    return Object.assign({
-      id: 'checkpoint-' + index,
-      label: '检查点',
-      activated: false
-    }, checkpoint);
-  });
+  return [];
 };
 
 MarvelMinigameRuntime.prototype.loadProgress = function () {
-  var fallback = {
+  return {
     heroes: {},
     lastHeroKey: HEROES[0].key,
     lastSelectedLevelIndex: 0
   };
-  var raw;
-
-  try {
-    if (typeof wx !== 'undefined' && typeof wx.getStorageSync === 'function') {
-      raw = wx.getStorageSync(PROGRESS_STORAGE_KEY);
-      if (raw && typeof raw === 'object') {
-        return raw;
-      }
-    }
-  } catch (err) {
-    return fallback;
-  }
-
-  return fallback;
 };
 
 MarvelMinigameRuntime.prototype.getSavedHeroIndex = function () {
@@ -1243,33 +1158,15 @@ MarvelMinigameRuntime.prototype.getSavedHeroIndex = function () {
 };
 
 MarvelMinigameRuntime.prototype.getSavedSelectedLevelIndex = function () {
-  var savedIndex = this.progress && typeof this.progress.lastSelectedLevelIndex === 'number'
-    ? this.progress.lastSelectedLevelIndex
-    : 0;
-  return utils.clamp(savedIndex, 0, 2);
+  return 0;
 };
 
 MarvelMinigameRuntime.prototype.saveProgress = function () {
-  try {
-    if (typeof wx !== 'undefined' && typeof wx.setStorageSync === 'function') {
-      wx.setStorageSync(PROGRESS_STORAGE_KEY, this.progress);
-    }
-  } catch (err) {
-    return;
-  }
+  return;
 };
 
 MarvelMinigameRuntime.prototype.syncSelectionProgress = function () {
-  if (!this.progress) {
-    this.progress = {
-      heroes: {},
-      lastHeroKey: HEROES[0].key,
-      lastSelectedLevelIndex: 0
-    };
-  }
-  this.progress.lastHeroKey = HEROES[this.heroIndex].key;
-  this.progress.lastSelectedLevelIndex = this.selectedLevelIndex;
-  this.saveProgress();
+  this.selectedLevelIndex = 0;
 };
 
 MarvelMinigameRuntime.prototype.getRankValue = function (rank) {
@@ -1289,189 +1186,49 @@ MarvelMinigameRuntime.prototype.getRankValue = function (rank) {
 };
 
 MarvelMinigameRuntime.prototype.getHeroProgressSummary = function (heroKey) {
-  var heroProgress = this.progress && this.progress.heroes ? this.progress.heroes[heroKey] : null;
-  var levels = heroProgress && heroProgress.levels ? heroProgress.levels : {};
-  var levelIds = Object.keys(levels);
-  var bestRank = 'None';
-  var bestRankValue = 0;
-  var totalLevels = this.getSelectableCampaign().length;
-
-  levelIds.forEach(function (levelId) {
-    var value = this.getRankValue(levels[levelId].rank);
-    if (value > bestRankValue) {
-      bestRankValue = value;
-      bestRank = levels[levelId].rank;
-    }
-  }, this);
-
   return {
-    clearedCount: levelIds.length,
-    totalLevels: totalLevels,
-    bestRank: bestRank
+    clearedCount: 0,
+    totalLevels: this.getSelectableCampaign().length,
+    bestRank: '--'
   };
 };
 
 MarvelMinigameRuntime.prototype.getHeroLevelRecord = function (heroKey, levelId) {
-  var heroProgress = this.progress && this.progress.heroes ? this.progress.heroes[heroKey] : null;
-  var levels = heroProgress && heroProgress.levels ? heroProgress.levels : {};
-  return levels[levelId] || null;
+  return null;
 };
 
 MarvelMinigameRuntime.prototype.getGlobalLevelRecord = function (levelId) {
-  var bestRank = '--';
-  var bestRankValue = 0;
-  var bestTime = null;
-
-  Object.keys((this.progress && this.progress.heroes) || {}).forEach(function (heroKey) {
-    var record = this.getHeroLevelRecord(heroKey, levelId);
-    var value;
-
-    if (!record) {
-      return;
-    }
-
-    value = this.getRankValue(record.rank);
-    if (value > bestRankValue) {
-      bestRankValue = value;
-      bestRank = record.rank;
-    }
-    if (bestTime === null || record.bestTime < bestTime) {
-      bestTime = record.bestTime;
-    }
-  }, this);
-
   return {
-    rank: bestRank,
-    bestTime: bestTime
+    rank: '--',
+    bestTime: null
   };
 };
 
 MarvelMinigameRuntime.prototype.getHeroBestRankForLevel = function (heroKey, levelId) {
-  var record = this.getHeroLevelRecord(heroKey, levelId);
-  return record ? record.rank : '--';
+  return '--';
 };
 
 MarvelMinigameRuntime.prototype.getCampaignProgressSummary = function () {
-  var levelMap = {};
-  var bestRank = 'None';
-  var bestRankValue = 0;
-  var totalLevels = this.getSelectableCampaign().length;
-
-  Object.keys((this.progress && this.progress.heroes) || {}).forEach(function (heroKey) {
-    var levels = this.progress.heroes[heroKey].levels || {};
-    Object.keys(levels).forEach(function (levelId) {
-      var rank = levels[levelId].rank;
-      var value = this.getRankValue(rank);
-      levelMap[levelId] = true;
-      if (value > bestRankValue) {
-        bestRankValue = value;
-        bestRank = rank;
-      }
-    }, this);
-  }, this);
-
   return {
-    clearedCount: Object.keys(levelMap).length,
-    totalLevels: totalLevels,
-    bestRank: bestRank
+    clearedCount: 0,
+    totalLevels: this.getSelectableCampaign().length,
+    bestRank: '--'
   };
 };
 
 MarvelMinigameRuntime.prototype.getOperationStatusSummary = function () {
-  var campaign = this.getSelectableCampaign();
-  var progress = this.getCampaignProgressSummary();
-  var heroClearCount = 0;
-
-  HEROES.forEach(function (hero) {
-    var summary = this.getHeroProgressSummary(hero.key);
-    if (summary.clearedCount >= summary.totalLevels) {
-      heroClearCount += 1;
-    }
-  }, this);
-
-  if (progress.clearedCount >= progress.totalLevels) {
-    return {
-      label: '全部章节已解锁',
-      detail: '全局最佳 ' + progress.bestRank + ' · 英雄通关 ' + heroClearCount + '/' + HEROES.length
-    };
-  }
-
   return {
-    label: '下一解锁 ' + campaign[progress.clearedCount].chapterLabel,
-    detail: '当前已解锁 ' + progress.clearedCount + '/' + progress.totalLevels + ' · 英雄通关 ' + heroClearCount + '/' + HEROES.length
+    label: '连续三关战役',
+    detail: '选好英雄后直接从第一关开始，通关后自动进入下一关。'
   };
 };
 
 MarvelMinigameRuntime.prototype.recordLevelClear = function (rank) {
-  var heroKey = this.hero ? this.hero.key : '';
-  var levelId = this.level ? this.level.id : '';
-  var heroProgress;
-  var previous;
-  var previousCampaignSummary = this.getCampaignProgressSummary();
-  var previousHeroSummary = this.getHeroProgressSummary(heroKey);
-  var unlockedLevel = null;
-  var improved = false;
-
-  if (!heroKey || !levelId) {
-    return;
-  }
-
-  if (!this.progress || !this.progress.heroes) {
-    this.progress = {
-      heroes: {}
-    };
-  }
-
-  if (!this.progress.heroes[heroKey]) {
-    this.progress.heroes[heroKey] = {
-      levels: {}
-    };
-  }
-
-  heroProgress = this.progress.heroes[heroKey];
-  previous = heroProgress.levels[levelId];
-  if (!previous || this.getRankValue(rank) > this.getRankValue(previous.rank)
-    || (this.getRankValue(rank) === this.getRankValue(previous.rank) && this.elapsedTime < previous.bestTime)) {
-    improved = true;
-    heroProgress.levels[levelId] = {
-      rank: rank,
-      bestTime: this.elapsedTime,
-      updatedAt: Date.now()
-    };
-    this.saveProgress();
-  }
-
-  if (improved) {
-    this.lastRecordUpdate = {
-      improved: true,
-      rank: rank,
-      bestTime: this.elapsedTime,
-      previousRank: previous ? previous.rank : '--',
-      previousBestTime: previous ? previous.bestTime : 0
-    };
-    this.pushAnnouncement('新纪录', this.hero.name + '在' + this.level.chapterLabel + '拿下' + rank + '评级。', SUCCESS, 1.9);
-    if (this.getCampaignProgressSummary().clearedCount > previousCampaignSummary.clearedCount
-      && this.getCampaignProgressSummary().clearedCount < this.getCampaignProgressSummary().totalLevels) {
-      unlockedLevel = this.getSelectableCampaign()[this.getCampaignProgressSummary().clearedCount];
-      this.lastRecordUpdate.unlockedLevelLabel = unlockedLevel.chapterLabel;
-      this.pushAnnouncement(
-        '章节解锁',
-        unlockedLevel.chapterLabel + ' 已可在选人界面直接进入。',
-        ACCENT,
-        2
-      );
-    }
-    if (this.getHeroProgressSummary(heroKey).clearedCount === previousHeroSummary.totalLevels
-      && previousHeroSummary.clearedCount < previousHeroSummary.totalLevels) {
-      this.pushAnnouncement('英雄通关', this.hero.name + ' 已完整通关整场战役。', SUCCESS, 2);
-    }
-  } else {
-    this.lastRecordUpdate = {
-      improved: false,
-      rank: previous ? previous.rank : rank,
-      bestTime: previous ? previous.bestTime : this.elapsedTime
-    };
-  }
+  this.lastRecordUpdate = {
+    improved: true,
+    rank: rank,
+    bestTime: this.elapsedTime
+  };
 };
 
 MarvelMinigameRuntime.prototype.createEnemy = function (spec) {
@@ -1606,68 +1363,11 @@ MarvelMinigameRuntime.prototype.createHazard = function (spec) {
 };
 
 MarvelMinigameRuntime.prototype.updateLevelEvents = function () {
-  var boss = this.getAliveBoss();
-  var playerCenterX = this.player ? this.player.x + this.player.width / 2 : 0;
-
-  this.levelEvents.forEach(function (event) {
-    var shouldTrigger = false;
-
-    if (event.triggered) {
-      return;
-    }
-
-    if (typeof event.triggerX === 'number' && playerCenterX >= event.triggerX) {
-      shouldTrigger = true;
-    }
-
-    if (!shouldTrigger && typeof event.triggerBossHealthBelow === 'number' && boss && boss.maxHealth > 0) {
-      shouldTrigger = (boss.health / boss.maxHealth) <= event.triggerBossHealthBelow;
-    }
-
-    if (!shouldTrigger) {
-      return;
-    }
-
-    event.triggered = true;
-    this.pushAnnouncement(
-      event.title || this.level.chapterLabel,
-      event.subtitle || '',
-      event.color || ACCENT,
-      event.duration || 1.9
-    );
-  }, this);
+  return;
 };
 
 MarvelMinigameRuntime.prototype.maybeAnnounceEnemyEncounter = function (enemy) {
-  var player = this.player;
-  var key;
-  var distance;
-
-  if (!player || !enemy || enemy.isDead || enemy.type === 'boss') {
-    return;
-  }
-
-  key = enemy.type === 'drone' ? 'drone' : (enemy.variant || enemy.type);
-  if (this.encounterHintsShown[key]) {
-    return;
-  }
-
-  distance = Math.abs((player.x + player.width / 2) - (enemy.x + enemy.width / 2));
-  if (distance > 240 * this.scale) {
-    return;
-  }
-
-  this.encounterHintsShown[key] = true;
-
-  if (key === 'artillery') {
-    this.pushAnnouncement('炮击单位', '炮击哨兵会停下射击，保持移动或贴身压制。', ACCENT, 1.8);
-  } else if (key === 'brute') {
-    this.pushAnnouncement('重装单位', '重装哨兵伤害更高，近身压迫更强。', WARNING, 1.8);
-  } else if (key === 'skirmisher') {
-    this.pushAnnouncement('游击单位', '游击哨兵会反复拉扯，注意抓住空档。', SUCCESS, 1.8);
-  } else if (key === 'drone') {
-    this.pushAnnouncement('空中巡逻', '无人机会悬停拉扯，并从远处持续开火。', ACCENT, 1.9);
-  }
+  return;
 };
 
 MarvelMinigameRuntime.prototype.createEncounterStates = function () {
@@ -1696,8 +1396,6 @@ MarvelMinigameRuntime.prototype.createEncounterStates = function () {
 
 MarvelMinigameRuntime.prototype.completeEncounter = function (encounterId, now) {
   var state = this.encounterStates[encounterId];
-  var player = this.player;
-  var healAmount;
 
   if (!state || state.cleared) {
     return;
@@ -1707,23 +1405,6 @@ MarvelMinigameRuntime.prototype.completeEncounter = function (encounterId, now) 
   if (this.levelStats) {
     this.levelStats.encountersCleared += 1;
   }
-  this.pushAnnouncement(state.title || '区域肃清', '当前敌群已清空，继续推进。', SUCCESS, 1.9);
-
-  if (!player || player.isDead) {
-    return;
-  }
-
-  healAmount = Math.min(18, player.maxHealth - player.health);
-  if (healAmount <= 0) {
-    return;
-  }
-
-  player.health += healAmount;
-  this.pushFloatingText('+' + healAmount, player.x + player.width / 2, player.y - 26 * this.scale, SUCCESS);
-  this.pushEffect(player.x + player.width / 2, player.y + player.height * 0.35, SUCCESS, 'suppressed', {
-    staticY: true
-  });
-  this.startShake(1.4, 80);
 };
 
 MarvelMinigameRuntime.prototype.getActiveEncounterState = function () {
@@ -1742,7 +1423,7 @@ MarvelMinigameRuntime.prototype.getActiveEncounterState = function () {
 };
 
 MarvelMinigameRuntime.prototype.canContinueFromCheckpoint = function () {
-  return this.state === 'over' && !!this.activeCheckpoint && !this.checkpointContinueUsed;
+  return false;
 };
 
 MarvelMinigameRuntime.prototype.updateCheckpoints = function (now) {
@@ -1781,12 +1462,8 @@ MarvelMinigameRuntime.prototype.updateCheckpoints = function (now) {
     healAmount = Math.min(player.maxHealth - player.health, Math.max(12, Math.round(player.maxHealth * 0.18)));
     if (healAmount > 0) {
       player.health += healAmount;
-      this.pushFloatingText('+' + healAmount, checkpoint.x, checkpoint.y - 74 * this.scale, SUCCESS);
     }
     this.pushAnnouncement('检查点激活', checkpoint.label + ' 已成为新的回撤点。', SUCCESS, 1.8);
-    this.pushEffect(checkpoint.x, checkpoint.y - 82 * this.scale, SUCCESS, 'suppressed', {
-      staticY: true
-    });
     this.startShake(1.6, 90);
   }, this);
 };
@@ -1822,7 +1499,6 @@ MarvelMinigameRuntime.prototype.reviveFromCheckpoint = function () {
   player.poseUntil = 0;
 
   this.projectiles = [];
-  this.effects = [];
   this.levelResultTime = 0;
   this.cameraX = utils.clamp(player.x + player.width / 2 - this.width * 0.38, 0, this.level.worldWidth - this.width);
   this.checkpointContinueUsed = true;
@@ -1838,9 +1514,6 @@ MarvelMinigameRuntime.prototype.reviveFromCheckpoint = function () {
     }
   }, this);
   this.pushAnnouncement('检查点继续', '重新回到战斗，利用空档稳住局面。', ACCENT, 1.7);
-  this.pushEffect(checkpoint.x, checkpoint.y - 82 * this.scale, ACCENT, 'impact', {
-    staticY: true
-  });
   this.startShake(2.2, 110);
 };
 
@@ -1849,32 +1522,46 @@ MarvelMinigameRuntime.prototype.maybeAnnounceBossIntro = function () {
   var player = this.player;
   var playerCenterX;
   var bossCenterX;
+  var arenaStartX;
+  var nearArenaEntrance;
+  var nearBoss;
 
   if (this.bossIntroShown || !boss || !player || this.state !== 'playing') {
     return;
   }
 
+  if (this.hasAliveNonBossEnemies()) {
+    return;
+  }
+
   playerCenterX = player.x + player.width / 2;
   bossCenterX = boss.x + boss.width / 2;
-  if (Math.abs(playerCenterX - bossCenterX) > 420 * this.scale) {
+  arenaStartX = this.level && typeof this.level.bossArenaStartX === 'number'
+    ? this.level.bossArenaStartX
+    : null;
+  nearArenaEntrance = typeof arenaStartX === 'number'
+    ? playerCenterX >= arenaStartX - 140 * this.scale
+    : false;
+  nearBoss = Math.abs(playerCenterX - bossCenterX) <= 520 * this.scale;
+
+  if (!nearArenaEntrance && !nearBoss) {
     return;
   }
 
   this.bossIntroShown = true;
-  this.bossArenaLockActive = true;
-  this.bossArenaLockX = Math.max(0, boss.patrolMin - 34 * this.scale);
-  this.pushAnnouncement('首领来袭', boss.name + ' 已守住最终战区，准备决战。', WARNING, 2.2);
-  this.pushAnnouncement('战区封锁', '泰坦闸门正在关闭，守住当前战场。', DANGER, 1.7);
-  this.pushEffect(this.bossArenaLockX, this.level.floorY - 92 * this.scale, WARNING, 'lightning', {
-    staticY: true
+  this.bossArenaActive = true;
+  this.bossArenaActivatedAt = Date.now();
+};
+
+MarvelMinigameRuntime.prototype.hasAliveNonBossEnemies = function () {
+  return this.enemies.some(function (enemy) {
+    return enemy.type !== 'boss' && enemy.active && !enemy.isDead;
   });
-  this.startShake(2.8, 120);
 };
 
 MarvelMinigameRuntime.prototype.tryActivateEnemyEncounter = function (enemy, now) {
   var player = this.player;
   var playerCenterX;
-  var burstKey;
   var encounterState;
 
   if (!player || !enemy || enemy.isDead || enemy.active || !enemy.activateAtX) {
@@ -1888,10 +1575,6 @@ MarvelMinigameRuntime.prototype.tryActivateEnemyEncounter = function (enemy, now
 
   enemy.active = true;
   enemy.controlLockedUntil = now + 180;
-  this.pushEffect(enemy.x + enemy.width / 2, enemy.y + enemy.height / 2, enemy.type === 'drone' ? ACCENT : WARNING, 'impact', {
-    staticY: true
-  });
-  this.startShake(enemy.type === 'drone' ? 1.6 : 2.1, 80);
 
   if (!enemy.encounterId) {
     return;
@@ -1901,19 +1584,6 @@ MarvelMinigameRuntime.prototype.tryActivateEnemyEncounter = function (enemy, now
   if (encounterState && !encounterState.engaged) {
     encounterState.engaged = true;
   }
-
-  burstKey = 'encounter:' + enemy.encounterId;
-  if (this.encounterBurstsShown[burstKey]) {
-    return;
-  }
-
-  this.encounterBurstsShown[burstKey] = true;
-  this.pushAnnouncement(
-    enemy.encounterTitle || '敌群来袭',
-    enemy.encounterSubtitle || '新的敌群已进入战场。',
-    enemy.type === 'drone' ? ACCENT : WARNING,
-    2
-  );
 };
 
 MarvelMinigameRuntime.prototype.getPlayerRect = function () {
@@ -1947,7 +1617,6 @@ MarvelMinigameRuntime.prototype.update = function (dt, now) {
   this.updateEnemies(dt, now);
   this.updateHazards(dt, now);
   this.updateProjectiles(dt, now);
-  this.updateEffects(dt);
   this.updateCamera(dt);
   this.updateLevelEvents();
   this.updateCheckpoints(now);
@@ -1998,7 +1667,6 @@ MarvelMinigameRuntime.prototype.updatePlayer = function (dt, now) {
     if (!wasOnGround) {
       player.lastGroundedAt = now;
       if (preMoveVy > 440 * this.scale) {
-        this.pushEffect(player.x + player.width / 2, player.y + player.height, hero.glowStyle, 'landing');
         this.startShake(hero.key === 'hulk' ? 4.8 : 2.8, 130);
       }
     }
@@ -2008,6 +1676,16 @@ MarvelMinigameRuntime.prototype.updatePlayer = function (dt, now) {
     player.beamUntil = 0;
   } else {
     this.damageEnemiesInBeam(now);
+  }
+
+  if (this.bossArenaActive && this.level && typeof this.level.bossArenaStartX === 'number') {
+    var retreatLimit = this.level.bossArenaStartX - 110 * this.scale;
+    if (player.x < retreatLimit) {
+      player.x = retreatLimit;
+      if (player.vx < 0) {
+        player.vx = 0;
+      }
+    }
   }
 };
 
@@ -2059,10 +1737,6 @@ MarvelMinigameRuntime.prototype.moveBodyWithPlatforms = function (body, dt) {
   }
 
   body.x = utils.clamp(body.x, 0, this.level.worldWidth - body.width);
-
-  if (body === this.player && this.bossArenaLockActive) {
-    body.x = Math.max(body.x, this.bossArenaLockX);
-  }
 
   if (body.y > this.height + 200 * this.scale) {
     body.y = this.level.floorY - body.height;
@@ -2121,15 +1795,18 @@ MarvelMinigameRuntime.prototype.usePrimaryAttack = function () {
       height: 10 * this.scale,
       damage: 18,
       color: hero.glowStyle,
-      hitEffect: 'repulsorHit',
+      visualType: 'repulsor',
       lifetime: 0.8
     });
-    this.pushEffect(player.x + player.width / 2, player.y + 20 * this.scale, hero.glowStyle, 'blast');
     return;
   }
 
   this.audio.playSfx('melee');
-  this.performMeleeAttack(92 * this.scale, 26, hero.primaryStyle);
+  this.performMeleeAttack(
+    92 * this.scale,
+    26,
+    hero.primaryStyle
+  );
 };
 
 MarvelMinigameRuntime.prototype.useSkill = function () {
@@ -2137,24 +1814,14 @@ MarvelMinigameRuntime.prototype.useSkill = function () {
   var hero = this.hero;
   var now = Date.now();
 
-  if (!player || this.state !== 'playing' || player.isDead || now < player.skillAvailableAt) {
+  if (!player || this.state !== 'playing' || player.isDead) {
     return;
   }
-
-  player.skillAvailableAt = now + hero.skillCooldown * 1000;
   this.setPose(player, hero.key === 'ironman' ? 'attackPrimary' : 'attackSkill', 260);
   this.audio.playSfx(hero.key === 'ironman' ? 'shot' : 'melee');
 
   if (hero.key === 'ironman') {
-    this.spawnSpreadProjectiles(3, 560 * this.scale, 28, 16, hero.glowStyle, 'repulsorHit');
-    this.pushEffect(player.x + player.width / 2, player.y, hero.glowStyle, 'skill');
-    this.pushEffect(
-      player.x + player.width / 2 + player.facing * 172 * this.scale,
-      player.y + player.height * 0.42,
-      hero.glowStyle,
-      'repulsorLanding',
-      { staticY: true }
-    );
+    this.spawnSpreadProjectiles(3, 560 * this.scale, 28, 16, hero.glowStyle);
     return;
   }
 
@@ -2168,31 +1835,16 @@ MarvelMinigameRuntime.prototype.useSkill = function () {
       height: 14 * this.scale,
       damage: 32,
       color: hero.glowStyle,
-      hitEffect: 'thunderHit',
+      visualType: 'thunder',
       lifetime: 1.2,
       pierce: 2
     });
-    this.pushEffect(player.x + player.width / 2, player.y, hero.glowStyle, 'throw');
-    this.pushEffect(
-      player.x + player.width / 2 + player.facing * 164 * this.scale,
-      player.y + player.height * 0.32,
-      hero.glowStyle,
-      'thunderLanding',
-      { staticY: true }
-    );
     return;
   }
 
   player.dashUntil = now + 280;
   player.vx = player.facing * 760 * this.scale;
   player.vy = 0;
-  this.pushEffect(
-    player.x + player.width / 2 + player.facing * 136 * this.scale,
-    player.y + player.height * 0.74,
-    hero.glowStyle,
-    'gammaLanding',
-    { staticY: true }
-  );
   this.damageEnemiesInDash(44, hero.glowStyle);
 };
 
@@ -2201,24 +1853,14 @@ MarvelMinigameRuntime.prototype.useUltimate = function () {
   var hero = this.hero;
   var now = Date.now();
 
-  if (!player || this.state !== 'playing' || player.isDead || now < player.ultimateAvailableAt) {
+  if (!player || this.state !== 'playing' || player.isDead) {
     return;
   }
-
-  player.ultimateAvailableAt = now + hero.ultimateCooldown * 1000;
   this.setPose(player, 'attackUltimate', 420);
   this.audio.playSfx('ultimate');
 
   if (hero.key === 'ironman') {
     player.beamUntil = now + 550;
-    this.pushEffect(player.x + player.width / 2, player.y + 10 * this.scale, hero.glowStyle, 'ultimate');
-    this.pushEffect(
-      player.x + player.width / 2 + player.facing * (player.beamLength - 12 * this.scale),
-      player.y + player.height * 0.38,
-      hero.glowStyle,
-      'repulsorLanding',
-      { staticY: true }
-    );
     return;
   }
 
@@ -2230,8 +1872,9 @@ MarvelMinigameRuntime.prototype.useUltimate = function () {
   this.performGroundSlam(hero.glowStyle);
 };
 
-MarvelMinigameRuntime.prototype.spawnSpreadProjectiles = function (count, speed, damage, spreadAngle, color, hitEffect) {
+MarvelMinigameRuntime.prototype.spawnSpreadProjectiles = function (count, speed, damage, spreadAngle, color) {
   var player = this.player;
+  var hero = this.hero;
   var middle = (count - 1) / 2;
   var i;
   var offsetIndex;
@@ -2249,7 +1892,7 @@ MarvelMinigameRuntime.prototype.spawnSpreadProjectiles = function (count, speed,
       height: 10 * this.scale,
       damage: damage,
       color: color,
-      hitEffect: hitEffect || '',
+      visualType: hero && hero.key === 'ironman' ? 'repulsor' : (hero && hero.key === 'thor' ? 'thunder' : 'gamma'),
       lifetime: 0.95
     });
   }
@@ -2264,12 +1907,9 @@ MarvelMinigameRuntime.prototype.performMeleeAttack = function (range, damage, co
     height: player.height - 16 * this.scale
   };
 
-  this.pushEffect(hitbox.x + hitbox.width / 2, hitbox.y + hitbox.height / 2, color, 'slash');
-
   this.enemies.forEach(function (enemy) {
     if (!enemy.isDead && utils.rectsIntersect(hitbox, enemy)) {
       this.applyDamageToEnemy(enemy, damage, Date.now(), color, player.x + player.width / 2, player.y + player.height / 2);
-      this.triggerHeroHitEffect(enemy, this.hero.key === 'thor' ? 'thunderHit' : 'gammaHit', color, Date.now());
     }
   }, this);
 };
@@ -2286,7 +1926,6 @@ MarvelMinigameRuntime.prototype.damageEnemiesInDash = function (damage, color) {
   this.enemies.forEach(function (enemy) {
     if (!enemy.isDead && utils.rectsIntersect(hitbox, enemy)) {
       this.applyDamageToEnemy(enemy, damage, Date.now(), color, player.x + player.width / 2, player.y + player.height / 2);
-      this.triggerHeroHitEffect(enemy, 'gammaHit', color, Date.now());
     }
   }, this);
 };
@@ -2299,6 +1938,7 @@ MarvelMinigameRuntime.prototype.strikeLightning = function (color) {
   var dist;
   var impactX;
   var impactY;
+  var now = Date.now();
 
   for (i = 0; i < this.enemies.length; i += 1) {
     if (this.enemies[i].isDead) {
@@ -2313,9 +1953,13 @@ MarvelMinigameRuntime.prototype.strikeLightning = function (color) {
 
   impactX = target ? target.x + target.width / 2 : player.x + player.facing * 180 * this.scale;
   impactY = target ? target.y + target.height / 2 : this.level.floorY - 40 * this.scale;
+  this.thorUltimateStrike = {
+    x: impactX,
+    y: impactY,
+    startedAt: now,
+    until: now + 280
+  };
 
-  this.pushEffect(impactX, impactY, color, 'lightning');
-  this.pushEffect(impactX, impactY, color, 'thunderLanding', { staticY: true });
   this.enemies.forEach(function (enemy) {
     if (!enemy.isDead) {
       var centerX = enemy.x + enemy.width / 2;
@@ -2323,8 +1967,7 @@ MarvelMinigameRuntime.prototype.strikeLightning = function (color) {
       var dx = centerX - impactX;
       var dy = centerY - impactY;
       if ((dx * dx + dy * dy) <= Math.pow(210 * this.scale, 2)) {
-        this.applyDamageToEnemy(enemy, 56, Date.now(), color, impactX, impactY);
-        this.triggerHeroHitEffect(enemy, 'thunderHit', color, Date.now());
+        this.applyDamageToEnemy(enemy, 56, now, color, impactX, impactY);
       }
     }
   }, this);
@@ -2332,8 +1975,6 @@ MarvelMinigameRuntime.prototype.strikeLightning = function (color) {
 
 MarvelMinigameRuntime.prototype.performGroundSlam = function (color) {
   var player = this.player;
-  this.pushEffect(player.x + player.width / 2, player.y + player.height, color, 'slam');
-  this.pushEffect(player.x + player.width / 2, player.y + player.height, color, 'gammaLanding', { staticY: true });
   this.enemies.forEach(function (enemy) {
     if (!enemy.isDead) {
       var centerX = enemy.x + enemy.width / 2;
@@ -2342,7 +1983,6 @@ MarvelMinigameRuntime.prototype.performGroundSlam = function (color) {
       var dy = centerY - (player.y + player.height / 2);
       if ((dx * dx + dy * dy) <= Math.pow(240 * this.scale, 2)) {
         this.applyDamageToEnemy(enemy, 62, Date.now(), color, player.x + player.width / 2, player.y + player.height / 2);
-        this.triggerHeroHitEffect(enemy, 'gammaHit', color, Date.now());
       }
     }
   }, this);
@@ -2358,26 +1998,13 @@ MarvelMinigameRuntime.prototype.spawnPlayerProjectile = function (spec) {
     vy: spec.vy,
     damage: spec.damage,
     color: spec.color,
-    hitEffect: spec.hitEffect || '',
+    visualType: spec.visualType || '',
     team: 'player',
     lifetime: spec.lifetime,
     age: 0,
     pierce: spec.pierce || 0,
     hits: []
   });
-};
-
-MarvelMinigameRuntime.prototype.triggerHeroHitEffect = function (enemy, effectType, color, now) {
-  if (!enemy || !effectType) {
-    return;
-  }
-
-  if (enemy.heroFxAvailableAt && now < enemy.heroFxAvailableAt) {
-    return;
-  }
-
-  enemy.heroFxAvailableAt = now + 90;
-  this.pushEffect(enemy.x + enemy.width / 2, enemy.y + enemy.height * 0.42, color, effectType);
 };
 
 MarvelMinigameRuntime.prototype.updateEnemies = function (dt, now) {
@@ -2573,7 +2200,6 @@ MarvelMinigameRuntime.prototype.updateEnemies = function (dt, now) {
 
     if (!comboActive && enemy.hazardLinkId && enemy.comboBoostUntil && now >= enemy.comboBoostUntil && !enemy.comboDecayUntil) {
       enemy.comboDecayUntil = now + 540;
-      this.pushEffect(enemy.x + enemy.width / 2, enemy.y + enemy.height * 0.45, SUCCESS, 'suppressed');
     }
 
     enemy.vy += gravity * dt;
@@ -2604,8 +2230,6 @@ MarvelMinigameRuntime.prototype.updateHazards = function (dt, now) {
         hazard.activeUntil = now + hazard.activeDuration;
         hazard.cooldownUntil = now + hazard.cycleDuration;
         this.startShake(1.8, 90);
-        this.pushEffect(hazard.x + hazard.width / 2, hazard.y + hazard.height / 2, SUCCESS, 'skill');
-        this.pushEffect(hazard.x + hazard.width / 2, hazard.y + hazard.height / 2, SUCCESS, 'impact');
         this.audio.playSfx('ultimate');
         this.hazards.forEach(function (target) {
           if (target !== hazard && target.linkId && target.linkId === hazard.linkId) {
@@ -2619,31 +2243,13 @@ MarvelMinigameRuntime.prototype.updateHazards = function (dt, now) {
 
     cycleProgress = (now + hazard.phaseOffset) % hazard.cycleDuration;
     if (now < (hazard.suppressedUntil || 0) && !hazard.wasSuppressed) {
-      this.pushEffect(
-        hazard.x + (hazard.width || hazard.radius * 2) / 2,
-        hazard.y + (hazard.height || hazard.radius * 2) / 2,
-        SUCCESS,
-        'suppressed'
-      );
       hazard.wasSuppressed = true;
     } else if (hazard.wasSuppressed && now >= (hazard.suppressedUntil || 0)) {
-      this.pushEffect(
-        hazard.x + (hazard.width || hazard.radius * 2) / 2,
-        hazard.y + (hazard.height || hazard.radius * 2) / 2,
-        WARNING,
-        'restored'
-      );
       hazard.wasSuppressed = false;
     }
     hazard.active = cycleProgress < hazard.activeDuration && now >= (hazard.suppressedUntil || 0);
 
     if (hazard.active && !wasActive) {
-      this.pushEffect(
-        hazard.x + (hazard.width || hazard.radius * 2) / 2,
-        hazard.y + (hazard.height || hazard.radius * 2) / 2,
-        WARNING,
-        hazard.type === 'mine' ? 'blast' : 'lightning'
-      );
       this.startShake(hazard.type === 'mine' ? 2.4 : 1.6, 90);
       this.audio.playSfx(hazard.type === 'mine' ? 'melee' : 'shot');
     }
@@ -2687,6 +2293,8 @@ MarvelMinigameRuntime.prototype.updateBossEnemy = function (enemy, dt, now) {
   var distX = playerCenterX - enemyCenterX;
   var verticalGap = Math.abs((player.y + player.height / 2) - (enemy.y + enemy.height / 2));
   var shouldProjectile = Math.abs(distX) < enemy.chaseRange && verticalGap < 120 * this.scale;
+  var patrolLeft = enemy.patrolMin;
+  var patrolRight = enemy.patrolMax - enemy.width;
 
   if (enemy.phase === 1 && enemy.health <= enemy.maxHealth * 0.5) {
     enemy.phase = 2;
@@ -2817,19 +2425,25 @@ MarvelMinigameRuntime.prototype.updateBossEnemy = function (enemy, dt, now) {
 
   enemy.vy += gravity * dt;
   this.moveBodyWithPlatforms(enemy, dt);
+  enemy.x = utils.clamp(enemy.x, patrolLeft, patrolRight);
+  if (enemy.x <= patrolLeft || enemy.x >= patrolRight) {
+    enemy.vx = 0;
+  }
 };
 
 MarvelMinigameRuntime.prototype.executeBossDash = function (enemy, now) {
   var startX = enemy.x;
   var targetCenterX = this.player.x + this.player.width / 2;
+  var patrolLeft = enemy.patrolMin;
+  var patrolRight = enemy.patrolMax - enemy.width;
   var targetX = utils.clamp(
     targetCenterX - enemy.width / 2,
-    0,
-    this.level.worldWidth - enemy.width
+    patrolLeft,
+    patrolRight
   );
   var maxOffset = enemy.dashDistance;
   var intendedOffset = utils.clamp(targetX - startX, -maxOffset, maxOffset);
-  var endX = utils.clamp(startX + intendedOffset, 0, this.level.worldWidth - enemy.width);
+  var endX = utils.clamp(startX + intendedOffset, patrolLeft, patrolRight);
   var dashHitbox = {
     x: Math.min(startX, endX) - 12 * this.scale,
     y: enemy.y + 10 * this.scale,
@@ -2841,7 +2455,6 @@ MarvelMinigameRuntime.prototype.executeBossDash = function (enemy, now) {
   enemy.vx = 0;
   enemy.vy = Math.min(enemy.vy, 0);
   enemy.projectileAvailableAt = Math.max(enemy.projectileAvailableAt, now + 500);
-  this.pushEffect(enemy.x + enemy.width / 2, enemy.y + enemy.height * 0.55, WARNING, 'slam');
   this.startShake(4.2, 150);
 
   if (utils.rectsIntersect(dashHitbox, this.getPlayerRect())) {
@@ -2885,8 +2498,6 @@ MarvelMinigameRuntime.prototype.executeBossNova = function (enemy, now) {
   }
 
   enemy.projectileAvailableAt = Math.max(enemy.projectileAvailableAt, now + 700);
-  this.pushEffect(centerX, centerY, WARNING, 'explode');
-  this.pushEffect(centerX, centerY, WARNING, 'blast');
   this.startShake(4.6, 170);
 };
 
@@ -2918,13 +2529,6 @@ MarvelMinigameRuntime.prototype.executeBossFinisher = function (enemy, now) {
     }
     return true;
   });
-  this.pushEffect(laneRect.width / 2, laneCenterY, WARNING, 'finisher', {
-    width: laneRect.width,
-    height: laneRect.height
-  });
-  if (clearedProjectiles > 0) {
-    this.pushEffect(enemy.x + enemy.width / 2, enemy.y + enemy.height * 0.45, SUCCESS, 'suppressed', { staticY: true });
-  }
   this.pushAnnouncement('湮灭横扫', '立刻起跳或下落，避开终结光束。', DANGER, 1.8);
   this.pushAnnouncement('首领破绽', '灭霸在横扫后失衡，抓紧输出。', SUCCESS, 1.5);
   this.audio.playSfx('bossFinisher');
@@ -2943,8 +2547,6 @@ MarvelMinigameRuntime.prototype.tryEnemyAttack = function (enemy, now) {
     width: hitboxWidth,
     height: enemy.height - (enemy.type === 'boss' ? 10 * this.scale : (enemy.type === 'drone' ? 6 * this.scale : 16 * this.scale))
   };
-
-  this.pushEffect(hitbox.x + hitbox.width / 2, hitbox.y + hitbox.height / 2, enemy.type === 'boss' ? WARNING : DANGER, 'enemy');
 
   if (utils.rectsIntersect(hitbox, this.getPlayerRect())) {
     this.applyDamageToPlayer(enemy.damage, now, enemy.x + enemy.width / 2, enemy.y + enemy.height / 2, enemy.type === 'boss' ? 'boss' : 'enemy');
@@ -2995,9 +2597,6 @@ MarvelMinigameRuntime.prototype.spawnEnemyProjectile = function (enemy) {
     });
   }
 
-  this.pushEffect(originX, originY, projectileColor, enemy.type === 'drone'
-    ? 'repulsorLanding'
-    : (enemy.variant === 'artillery' ? 'thunderLanding' : 'blast'));
 };
 
 MarvelMinigameRuntime.prototype.updateProjectiles = function (dt, now) {
@@ -3026,7 +2625,6 @@ MarvelMinigameRuntime.prototype.updateProjectiles = function (dt, now) {
             projectile.x + projectile.width / 2,
             projectile.y + projectile.height / 2
           );
-          this.triggerHeroHitEffect(this.enemies[i], projectile.hitEffect, projectile.color, now);
           projectile.hits.push(this.enemies[i]);
           if (projectile.pierce > 0) {
             projectile.pierce -= 1;
@@ -3052,13 +2650,6 @@ MarvelMinigameRuntime.prototype.updateProjectiles = function (dt, now) {
   }, this);
 };
 
-MarvelMinigameRuntime.prototype.updateEffects = function (dt) {
-  this.effects = this.effects.filter(function (effect) {
-    effect.age += dt;
-    return effect.age < effect.duration;
-  });
-};
-
 MarvelMinigameRuntime.prototype.updateCamera = function (dt) {
   var targetX = utils.clamp(this.player.x + this.player.width / 2 - this.width * 0.38, 0, this.level.worldWidth - this.width);
   this.cameraX = utils.lerp(this.cameraX, targetX, Math.min(1, dt * 8));
@@ -3068,205 +2659,15 @@ MarvelMinigameRuntime.prototype.checkVictory = function (now) {
   var remaining = this.enemies.filter(function (enemy) {
     return enemy.active && !enemy.isDead;
   }).length;
-  var bossAlive = !!this.getAliveBoss();
-  var lockEffectX;
 
   if (remaining > 0) {
-    this.transitionMessage = bossAlive
-      ? '击败战争领主完成任务'
-      : '清空哨兵后解锁撤离';
     return;
   }
 
-  if (this.bossArenaLockActive) {
-    lockEffectX = this.bossArenaLockX;
-    this.bossArenaLockActive = false;
-    this.pushAnnouncement('战区开放', '泰坦闸门已解除，完成最后目标。', SUCCESS, 1.7);
-    this.pushEffect(lockEffectX, this.level.floorY - 92 * this.scale, SUCCESS, 'impact', {
-      staticY: true
-    });
-    this.startShake(2.6, 120);
-  }
-
-  if (!this.level.exit) {
-    this.transitionMessage = '首领已倒下';
-    this.recordLevelClear(this.getLevelAssessment(true).rank);
-    this.state = 'victory';
-    this.levelResultTime = now;
-    this.resetTouchState();
-    return;
-  }
-
-  this.transitionMessage = '撤离点已开启';
-
-  if (utils.rectsIntersect(this.getPlayerRect(), this.level.exit)) {
-    this.recordLevelClear(this.getLevelAssessment(true).rank);
-    this.state = 'victory';
-    this.levelResultTime = now;
-    this.resetTouchState();
-  }
-};
-
-MarvelMinigameRuntime.prototype.getObjectiveCue = function () {
-  var player = this.player;
-  var boss = this.getAliveBoss();
-  var now = Date.now();
-  var nearestEnemy = null;
-  var nearestEnemyDist = Infinity;
-  var encounterEnemy = null;
-  var encounterEnemyDist = Infinity;
-  var preferredSwitch = null;
-  var preferredSwitchDist = Infinity;
-  var activeLinkedMap = {};
-  var activeEncounterId = '';
-  var playerCenterX;
-
-  if (this.state !== 'playing' || !player || player.isDead) {
-    return null;
-  }
-
-  playerCenterX = player.x + player.width / 2;
-
-  this.hazards.forEach(function (hazard) {
-    if (!hazard.linkId || !hazard.active || Date.now() < (hazard.suppressedUntil || 0)) {
-      return;
-    }
-    activeLinkedMap[hazard.linkId] = true;
-  });
-
-  this.hazards.forEach(function (hazard) {
-    var dist;
-    if (hazard.type !== 'switch' || !hazard.linkId || !activeLinkedMap[hazard.linkId]) {
-      return;
-    }
-    dist = Math.abs((hazard.x + hazard.width / 2) - playerCenterX);
-    if (dist < preferredSwitchDist) {
-      preferredSwitch = hazard;
-      preferredSwitchDist = dist;
-    }
-  });
-
-  if (boss) {
-    var punishable = now < (boss.weakenedUntil || 0) || now < (boss.recoveryUntil || 0);
-    return {
-      label: punishable ? '反打' : '首领',
-      targetX: boss.x + boss.width / 2,
-      targetY: boss.y - 22 * this.scale,
-      color: punishable ? SUCCESS : WARNING
-    };
-  }
-
-  Object.keys(this.encounterStates || {}).some(function (encounterId) {
-    var state = this.encounterStates[encounterId];
-    if (state && state.engaged && !state.cleared) {
-      activeEncounterId = encounterId;
-      return true;
-    }
-    return false;
-  }, this);
-
-  if (preferredSwitch) {
-    return {
-      label: '开关',
-      targetX: preferredSwitch.x + preferredSwitch.width / 2,
-      targetY: preferredSwitch.y - 18 * this.scale,
-      color: SUCCESS
-    };
-  }
-
-  this.enemies.forEach(function (enemy) {
-    var dist;
-    if (!enemy.active || enemy.isDead) {
-      return;
-    }
-    dist = Math.abs((enemy.x + enemy.width / 2) - playerCenterX);
-    if (activeEncounterId && enemy.encounterId === activeEncounterId && dist < encounterEnemyDist) {
-      encounterEnemy = enemy;
-      encounterEnemyDist = dist;
-    }
-    if (dist < nearestEnemyDist) {
-      nearestEnemy = enemy;
-      nearestEnemyDist = dist;
-    }
-  });
-
-  if (encounterEnemy) {
-    return {
-      label: '清场',
-      targetX: encounterEnemy.x + encounterEnemy.width / 2,
-      targetY: encounterEnemy.y - 18 * this.scale,
-      color: WARNING
-    };
-  }
-
-  if (nearestEnemy) {
-    return {
-      label: '目标',
-      targetX: nearestEnemy.x + nearestEnemy.width / 2,
-      targetY: nearestEnemy.y - 18 * this.scale,
-      color: DANGER
-    };
-  }
-
-  if (this.level.exit) {
-    return {
-      label: '撤离',
-      targetX: this.level.exit.x + this.level.exit.width / 2,
-      targetY: this.level.exit.y - 18 * this.scale,
-      color: ACCENT
-    };
-  }
-
-  return null;
-};
-
-MarvelMinigameRuntime.prototype.drawObjectiveCue = function (ctx) {
-  var cue = this.getObjectiveCue();
-  var screenX;
-  var screenY;
-  var edgeX;
-  var visible;
-
-  if (!cue) {
-    return;
-  }
-
-  screenX = cue.targetX - this.cameraX;
-  screenY = cue.targetY;
-  visible = screenX > 42 * this.scale && screenX < this.width - 42 * this.scale;
-
-  ctx.save();
-  if (visible) {
-    utils.fillRoundRect(ctx, screenX - 34 * this.scale, screenY - 24 * this.scale, 68 * this.scale, 22 * this.scale, 999, 'rgba(10, 15, 32, 0.74)');
-    utils.strokeRoundRect(ctx, screenX - 34 * this.scale, screenY - 24 * this.scale, 68 * this.scale, 22 * this.scale, 999, cue.color, 2);
-    utils.setTextStyle(ctx, 10 * this.scale, 'bold', cue.color, 'center', 'middle');
-    ctx.fillText(cue.label, screenX, screenY - 13 * this.scale);
-    ctx.strokeStyle = cue.color;
-    ctx.lineWidth = 2 * this.scale;
-    ctx.beginPath();
-    ctx.moveTo(screenX, screenY - 2 * this.scale);
-    ctx.lineTo(screenX, screenY + 12 * this.scale);
-    ctx.stroke();
-  } else {
-    edgeX = screenX <= 42 * this.scale ? 24 * this.scale : this.width - 24 * this.scale;
-    utils.fillRoundRect(ctx, edgeX - 30 * this.scale, 126 * this.scale, 60 * this.scale, 20 * this.scale, 999, 'rgba(10, 15, 32, 0.74)');
-    utils.setTextStyle(ctx, 10 * this.scale, 'bold', cue.color, 'center', 'middle');
-    ctx.fillText(cue.label, edgeX, 136 * this.scale);
-    ctx.fillStyle = cue.color;
-    ctx.beginPath();
-    if (screenX <= 42 * this.scale) {
-      ctx.moveTo(edgeX - 16 * this.scale, 168 * this.scale);
-      ctx.lineTo(edgeX + 6 * this.scale, 158 * this.scale);
-      ctx.lineTo(edgeX + 6 * this.scale, 178 * this.scale);
-    } else {
-      ctx.moveTo(edgeX + 16 * this.scale, 168 * this.scale);
-      ctx.lineTo(edgeX - 6 * this.scale, 158 * this.scale);
-      ctx.lineTo(edgeX - 6 * this.scale, 178 * this.scale);
-    }
-    ctx.closePath();
-    ctx.fill();
-  }
-  ctx.restore();
+  this.recordLevelClear(this.getLevelAssessment(true).rank);
+  this.state = 'victory';
+  this.levelResultTime = now;
+  this.resetTouchState();
 };
 
 MarvelMinigameRuntime.prototype.damageEnemiesInBeam = function (now) {
@@ -3288,7 +2689,6 @@ MarvelMinigameRuntime.prototype.damageEnemiesInBeam = function (now) {
         player.x + player.width / 2,
         player.y + player.height * 0.3
       );
-      this.triggerHeroHitEffect(enemy, 'repulsorHit', this.hero.glowStyle, now);
     }
   }, this);
 };
@@ -3311,8 +2711,6 @@ MarvelMinigameRuntime.prototype.applyDamageToEnemy = function (enemy, damage, no
   enemy.invulnerableUntil = now + 160;
   enemy.hurtUntil = now + 180;
   this.setPose(enemy, enemy.health <= 0 ? 'dead' : 'hurt', enemy.health <= 0 ? 700 : 180);
-  this.pushFloatingText('-' + resolvedDamage, enemy.x + enemy.width / 2, enemy.y - 8 * this.scale, color || WARNING);
-  this.pushEffect(enemy.x + enemy.width / 2, enemy.y + enemy.height * 0.42, color || WARNING, 'impact');
   enemyCenterX = enemy.x + enemy.width / 2;
   enemy.hurtSourceX = typeof sourceX === 'number' ? sourceX : enemyCenterX;
 
@@ -3336,7 +2734,6 @@ MarvelMinigameRuntime.prototype.applyDamageToEnemy = function (enemy, damage, no
     enemy.deathStartedAt = now;
     enemy.deathUntil = now + 620;
     this.audio.playSfx('explosion');
-    this.pushEffect(enemy.x + enemy.width / 2, enemy.y + enemy.height / 2, color || SUCCESS, 'explode');
     this.startShake(enemy.type === 'boss' ? 4.5 : 2.4, enemy.type === 'boss' ? 180 : 90);
 
     if (enemy.encounterId) {
@@ -3370,7 +2767,6 @@ MarvelMinigameRuntime.prototype.applyDamageToPlayer = function (damage, now, sou
   player.hurtUntil = now + 220;
   this.setPose(player, player.health <= 0 ? 'dead' : 'hurt', player.health <= 0 ? 900 : 220);
   this.audio.playSfx('damage');
-  this.pushFloatingText('-' + damage, player.x + player.width / 2, player.y - 12 * this.scale, DANGER);
   playerCenterX = player.x + player.width / 2;
   player.hurtSourceX = typeof sourceX === 'number' ? sourceX : playerCenterX;
 
@@ -3386,7 +2782,6 @@ MarvelMinigameRuntime.prototype.applyDamageToPlayer = function (damage, now, sou
   } else if (reason === 'finisher') {
     shakeIntensity = 6.2;
     shakeDuration = 180;
-    this.pushEffect(player.x + player.width / 2, player.y + player.height * 0.5, DANGER, 'finisherImpact');
     this.audio.playSfx('explosion');
   } else if (reason === 'fall') {
     shakeIntensity = 4.5;
@@ -3413,47 +2808,12 @@ MarvelMinigameRuntime.prototype.applyDamageToPlayer = function (damage, now, sou
   }
 };
 
-MarvelMinigameRuntime.prototype.pushEffect = function (x, y, color, type, extras) {
-  this.effects.push(Object.assign({
-    type: type,
-    x: x,
-    y: y,
-    color: color,
-    age: 0,
-    duration: type === 'ultimate'
-      ? 0.55
-      : (type === 'finisher'
-        ? 0.42
-        : (type === 'landing' || type === 'repulsorLanding' || type === 'thunderLanding' || type === 'gammaLanding'
-          ? 0.42
-          : 0.35))
-  }, extras || {}));
-};
-
-MarvelMinigameRuntime.prototype.pushFloatingText = function (label, x, y, color) {
-  this.effects.push({
-    type: 'text',
-    label: label,
-    x: x,
-    y: y,
-    color: color,
-    age: 0,
-    duration: 0.75
-  });
-};
-
 MarvelMinigameRuntime.prototype.render = function () {
   var ctx = this.ctx;
   ctx.clearRect(0, 0, this.width, this.height);
 
   if (this.state === 'title') {
     this.renderTitle(ctx);
-    this.drawBannerOverlay(ctx);
-    return;
-  }
-
-  if (this.state === 'archive') {
-    this.renderArchiveOverlay(ctx);
     this.drawBannerOverlay(ctx);
     return;
   }
@@ -3496,11 +2856,10 @@ MarvelMinigameRuntime.prototype.renderTransitionOverlay = function (ctx) {
   var elapsed = Date.now() - this.transitionStartedAt;
   var progress = this.transitionDuration > 0 ? utils.clamp(elapsed / this.transitionDuration, 0, 1) : 1;
   var fade = progress < 0.2 ? progress / 0.2 : (progress > 0.82 ? (1 - progress) / 0.18 : 1);
-  var panelWidth = Math.min(540 * this.scale, this.width - 88 * this.scale);
-  var panelHeight = 236 * this.scale;
+  var panelWidth = Math.min(420 * this.scale, this.width - 96 * this.scale);
+  var panelHeight = 150 * this.scale;
   var panelX = this.width / 2 - panelWidth / 2;
   var panelY = this.height / 2 - panelHeight / 2;
-  var portrait = this.hero ? this.assets.get(this.getHeroPortraitKey(this.hero.key)) : null;
   var backgroundIndex = this.transitionLevelIndex >= 0 ? this.transitionLevelIndex : this.levelIndex;
   var barWidth = panelWidth - 72 * this.scale;
 
@@ -3517,68 +2876,31 @@ MarvelMinigameRuntime.prototype.renderTransitionOverlay = function (ctx) {
     radius: 26
   });
 
-  utils.setTextStyle(ctx, 14 * this.scale, 'bold', ACCENT, 'center', 'middle');
-  ctx.fillText(this.transitionReason === 'advance' ? '章节切换' : '任务部署', this.width / 2, panelY + 30 * this.scale);
-  utils.setTextStyle(ctx, 30 * this.scale, 'bold', INK, 'center', 'middle');
-  ctx.fillText(level.chapterLabel, this.width / 2, panelY + 74 * this.scale);
-  utils.setTextStyle(ctx, 18 * this.scale, null, SOFT_INK, 'center', 'middle');
-  ctx.fillText(level.name, this.width / 2, panelY + 104 * this.scale);
-  utils.setTextStyle(ctx, 13 * this.scale, null, '#d8deef', 'center', 'middle');
-  ctx.fillText(level.objective || this.transitionHint, this.width / 2, panelY + 132 * this.scale);
-
-  if (portrait) {
-    this.drawImageFit(ctx, portrait, panelX + 26 * this.scale, panelY + 28 * this.scale, 82 * this.scale, 82 * this.scale, 0.92);
-  }
-
-  utils.fillRoundRect(ctx, panelX + 36 * this.scale, panelY + panelHeight - 40 * this.scale, barWidth, 12 * this.scale, 999, 'rgba(255,255,255,0.14)');
-  utils.fillRoundRect(ctx, panelX + 36 * this.scale, panelY + panelHeight - 40 * this.scale, barWidth * progress, 12 * this.scale, 999, this.hero ? this.hero.glowStyle : ACCENT);
-  utils.setTextStyle(ctx, 12 * this.scale, null, SOFT_INK, 'center', 'middle');
-  ctx.fillText(progress < 0.96 ? '正在部署…' : '任务就绪', this.width / 2, panelY + panelHeight - 18 * this.scale);
+  utils.setTextStyle(ctx, 12 * this.scale, 'bold', ACCENT, 'center', 'middle');
+  ctx.fillText(this.transitionReason === 'advance' ? '进入下一关' : '准备出发', this.width / 2, panelY + 28 * this.scale);
+  utils.setTextStyle(ctx, 28 * this.scale, 'bold', INK, 'center', 'middle');
+  ctx.fillText(level.chapterLabel, this.width / 2, panelY + 68 * this.scale);
+  utils.setTextStyle(ctx, 16 * this.scale, null, SOFT_INK, 'center', 'middle');
+  ctx.fillText(level.name, this.width / 2, panelY + 98 * this.scale);
+  utils.fillRoundRect(ctx, panelX + 36 * this.scale, panelY + panelHeight - 28 * this.scale, barWidth, 8 * this.scale, 999, 'rgba(255,255,255,0.14)');
+  utils.fillRoundRect(ctx, panelX + 36 * this.scale, panelY + panelHeight - 28 * this.scale, barWidth * progress, 8 * this.scale, 999, this.hero ? this.hero.glowStyle : ACCENT);
   ctx.restore();
 };
 
 MarvelMinigameRuntime.prototype.renderTitle = function (ctx) {
   var panel = this.getTitlePanelRect();
   var buttonRect = this.getTitleButtonRect();
-  var archiveRect = this.getTitleArchiveRect();
-  var progress = this.getCampaignProgressSummary();
-  var operationStatus = this.getOperationStatusSummary();
-  var lastHero = HEROES[this.heroIndex];
-  var selectedCampaign = this.getSelectableCampaign();
-  var selectedLevel = selectedCampaign[this.selectedLevelIndex];
 
   this.drawBackdrop(ctx);
   utils.drawPanel(ctx, panel.x, panel.y, panel.width, panel.height);
 
   ctx.save();
   utils.setTextStyle(ctx, 26 * this.scale, 'bold', INK, 'center', 'middle');
-  ctx.fillText(gameMeta.title, this.width / 2, this.height * 0.28);
+  ctx.fillText(gameMeta.title, this.width / 2, panel.y + 52 * this.scale);
   utils.setTextStyle(ctx, 14 * this.scale, null, SOFT_INK, 'center', 'middle');
-  ctx.fillText('触控英雄横版动作闯关', this.width / 2, this.height * 0.34);
-  utils.setTextStyle(ctx, 16 * this.scale, null, '#d8deef', 'center', 'middle');
-  ctx.fillText('选择英雄，移动、跳跃、战斗，闯过三章战役。', this.width / 2, this.height * 0.42);
-  utils.setTextStyle(ctx, 13 * this.scale, 'bold', ACCENT, 'center', 'middle');
-  ctx.fillText(
-    '战役进度 ' + progress.clearedCount + '/' + progress.totalLevels + ' · 全局最佳 ' + progress.bestRank,
-    this.width / 2,
-    this.height * 0.49
-  );
-  utils.setTextStyle(ctx, 12 * this.scale, null, SOFT_INK, 'center', 'middle');
-  ctx.fillText(
-    '上次选择 ' + lastHero.name + ' · ' + selectedLevel.chapterLabel,
-    this.width / 2,
-    this.height * 0.54
-  );
-  utils.setTextStyle(ctx, 12 * this.scale, 'bold', WARNING, 'center', 'middle');
-  ctx.fillText(operationStatus.label, this.width / 2, this.height * 0.59);
-  utils.setTextStyle(ctx, 11 * this.scale, null, SOFT_INK, 'center', 'middle');
-  ctx.fillText(operationStatus.detail, this.width / 2, this.height * 0.63);
-  utils.drawButton(ctx, archiveRect, '战役档案', {
-    fillStyle: 'rgba(255,255,255,0.08)',
-    strokeStyle: 'rgba(255,255,255,0.18)',
-    fontSize: 12 * this.scale,
-    radius: 999
-  });
+  ctx.fillText('触控动作闯关', this.width / 2, panel.y + 88 * this.scale);
+  utils.setTextStyle(ctx, 13 * this.scale, null, '#d8deef', 'center', 'middle');
+  ctx.fillText('选英雄后直接开始三关战役。', this.width / 2, panel.y + 122 * this.scale);
   utils.drawButton(ctx, buttonRect, '开始任务', {
     fillStyle: 'rgba(200, 57, 61, 0.92)',
     strokeStyle: 'rgba(255, 244, 228, 0.26)',
@@ -3700,9 +3022,7 @@ MarvelMinigameRuntime.prototype.drawArchiveStageRow = function (ctx, hero, level
 
 MarvelMinigameRuntime.prototype.renderCharacterSelect = function (ctx) {
   var rects = this.getHeroCardRects();
-  var stageRects = this.getStageChipRects();
-  var campaign = this.getSelectableCampaign();
-  var unlockedMax = this.getUnlockedLevelMaxIndex();
+  var layout = this.getCharacterSelectLayout();
   var startRect = this.getSelectStartRect();
   var i;
 
@@ -3711,18 +3031,15 @@ MarvelMinigameRuntime.prototype.renderCharacterSelect = function (ctx) {
   ctx.save();
   utils.setTextStyle(ctx, 24 * this.scale, 'bold', INK, 'center', 'middle');
   ctx.fillText('选择英雄', this.width / 2, 58 * this.scale);
-  utils.setTextStyle(ctx, 13 * this.scale, null, SOFT_INK, 'center', 'middle');
-  ctx.fillText('选择英雄与已解锁章节，然后立即出发。', this.width / 2, 84 * this.scale);
+  utils.setTextStyle(ctx, 12 * this.scale, null, SOFT_INK, 'center', 'middle');
+  ctx.fillText('选一个英雄后直接开始。', this.width / 2, 82 * this.scale);
 
   for (i = 0; i < HEROES.length; i += 1) {
     this.drawHeroCard(ctx, HEROES[i], rects[i], i === this.heroIndex);
   }
-
-  for (i = 0; i < campaign.length; i += 1) {
-    this.drawStageChip(ctx, campaign[i], stageRects[i], i === this.selectedLevelIndex, i <= unlockedMax);
-  }
-
-  utils.drawButton(ctx, startRect, '开始 ' + campaign[this.selectedLevelIndex].chapterLabel, {
+  utils.setTextStyle(ctx, 10.5 * this.scale, null, SOFT_INK, 'center', 'middle');
+  ctx.fillText('第一关开始，通关后自动进入下一关。', this.width / 2, layout.noteY + layout.noteHeight / 2);
+  utils.drawButton(ctx, startRect, '开始第一关', {
     fillStyle: 'rgba(62, 116, 255, 0.9)',
     strokeStyle: 'rgba(255, 255, 255, 0.18)',
     fontSize: 16 * this.scale
@@ -3736,11 +3053,13 @@ MarvelMinigameRuntime.prototype.renderGameplay = function (ctx) {
   ctx.save();
   ctx.translate(shake.x, shake.y);
   this.drawWorld(ctx);
-  this.drawObjectiveCue(ctx);
   ctx.restore();
-  this.drawHud(ctx);
+  if (this.state !== 'over' && this.state !== 'victory') {
+    this.drawHud(ctx);
+  }
 
   if (this.state === 'playing') {
+    this.drawBossArenaCue(ctx);
     this.drawControls(ctx);
   }
 };
@@ -3868,14 +3187,50 @@ MarvelMinigameRuntime.prototype.drawSetPiece = function (ctx, piece) {
   if (piece.type === 'wreck') {
     utils.fillRoundRect(ctx, x, y + height * 0.34, width, height * 0.66, 16 * this.scale, 'rgba(92, 99, 118, 0.72)');
     utils.strokeRoundRect(ctx, x, y + height * 0.34, width, height * 0.66, 16 * this.scale, 'rgba(247,247,251,0.14)', 2);
-    ctx.strokeStyle = DANGER;
-    ctx.lineWidth = 3 * this.scale;
+    ctx.fillStyle = 'rgba(45, 50, 67, 0.9)';
     ctx.beginPath();
     ctx.moveTo(x + width * 0.12, y + height * 0.72);
-    ctx.lineTo(x + width * 0.34, y + height * 0.2);
-    ctx.lineTo(x + width * 0.54, y + height * 0.74);
-    ctx.lineTo(x + width * 0.8, y + height * 0.32);
+    ctx.lineTo(x + width * 0.3, y + height * 0.3);
+    ctx.lineTo(x + width * 0.42, y + height * 0.54);
+    ctx.lineTo(x + width * 0.55, y + height * 0.34);
+    ctx.lineTo(x + width * 0.68, y + height * 0.62);
+    ctx.lineTo(x + width * 0.84, y + height * 0.4);
+    ctx.lineTo(x + width * 0.84, y + height * 0.82);
+    ctx.lineTo(x + width * 0.12, y + height * 0.82);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+    ctx.lineWidth = 2 * this.scale;
     ctx.stroke();
+
+    ctx.fillStyle = 'rgba(116, 128, 156, 0.36)';
+    ctx.beginPath();
+    ctx.moveTo(x + width * 0.16, y + height * 0.66);
+    ctx.lineTo(x + width * 0.3, y + height * 0.4);
+    ctx.lineTo(x + width * 0.38, y + height * 0.52);
+    ctx.lineTo(x + width * 0.25, y + height * 0.72);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.moveTo(x + width * 0.5, y + height * 0.6);
+    ctx.lineTo(x + width * 0.66, y + height * 0.42);
+    ctx.lineTo(x + width * 0.76, y + height * 0.56);
+    ctx.lineTo(x + width * 0.62, y + height * 0.74);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.strokeStyle = 'rgba(123, 199, 255, 0.38)';
+    ctx.lineWidth = 2 * this.scale;
+    ctx.beginPath();
+    ctx.moveTo(x + width * 0.22, y + height * 0.7);
+    ctx.lineTo(x + width * 0.32, y + height * 0.52);
+    ctx.moveTo(x + width * 0.56, y + height * 0.68);
+    ctx.lineTo(x + width * 0.7, y + height * 0.5);
+    ctx.stroke();
+
+    utils.fillRoundRect(ctx, x + width * 0.08, y + height * 0.82, width * 0.18, height * 0.08, 999, 'rgba(123, 199, 255, 0.18)');
+    utils.fillRoundRect(ctx, x + width * 0.64, y + height * 0.82, width * 0.14, height * 0.08, 999, 'rgba(123, 199, 255, 0.14)');
   } else if (piece.type === 'reactor') {
     utils.fillRoundRect(ctx, x + width * 0.18, y + height * 0.32, width * 0.64, height * 0.68, 18 * this.scale, 'rgba(24, 33, 63, 0.8)');
     ctx.strokeStyle = ACCENT;
@@ -3970,9 +3325,12 @@ MarvelMinigameRuntime.prototype.drawWorld = function (ctx) {
   var i;
   var platform;
   var exit = this.level.exit;
+  var arenaStartX = this.level.bossArenaStartX;
+  var arenaEndX = this.level.bossArenaEndX;
+  var arenaPulse = this.bossArenaActive ? (0.5 + 0.5 * Math.sin(Date.now() * 0.006)) : 0;
   var exitLocked = this.enemies.some(function (enemy) {
     return enemy.active && !enemy.isDead;
-  }) || this.bossArenaLockActive;
+  });
 
   ctx.save();
   ctx.translate(-cameraX, 0);
@@ -3982,6 +3340,33 @@ MarvelMinigameRuntime.prototype.drawWorld = function (ctx) {
     ctx.fillStyle = platform.type === 'ground' ? '#4e556a' : '#667089';
     utils.fillRoundRect(ctx, platform.x, platform.y, platform.width, platform.height, 8 * this.scale, ctx.fillStyle);
     utils.strokeRoundRect(ctx, platform.x, platform.y, platform.width, platform.height, 8 * this.scale, 'rgba(255,255,255,0.12)', 2);
+  }
+
+  if (this.bossArenaActive && typeof arenaStartX === 'number' && typeof arenaEndX === 'number' && arenaEndX > arenaStartX) {
+    var arenaWidth = arenaEndX - arenaStartX;
+    var arenaTopY = this.level.floorY - 138 * this.scale;
+    var arenaHeight = 132 * this.scale;
+    ctx.save();
+    ctx.globalAlpha = 0.3 + arenaPulse * 0.12;
+    utils.fillRoundRect(ctx, arenaStartX, arenaTopY, arenaWidth, arenaHeight, 20 * this.scale, WARNING);
+    ctx.globalAlpha = 0.86;
+    ctx.strokeStyle = 'rgba(255, 184, 106, 0.9)';
+    ctx.lineWidth = 3.5 * this.scale;
+    ctx.beginPath();
+    ctx.moveTo(arenaStartX + 10 * this.scale, this.level.floorY - 8 * this.scale);
+    ctx.lineTo(arenaEndX - 10 * this.scale, this.level.floorY - 8 * this.scale);
+    ctx.stroke();
+    ctx.globalAlpha = 0.52 + arenaPulse * 0.2;
+    ctx.fillStyle = WARNING;
+    utils.fillRoundRect(ctx, arenaStartX - 3 * this.scale, arenaTopY + 18 * this.scale, 6 * this.scale, arenaHeight - 24 * this.scale, 999, WARNING);
+    utils.fillRoundRect(ctx, arenaEndX - 3 * this.scale, arenaTopY + 18 * this.scale, 6 * this.scale, arenaHeight - 24 * this.scale, 999, WARNING);
+    ctx.globalAlpha = 0.26 + arenaPulse * 0.08;
+    ctx.fillStyle = 'rgba(255,255,255,0.7)';
+    utils.fillRoundRect(ctx, arenaStartX + 12 * this.scale, arenaTopY + 18 * this.scale, arenaWidth - 24 * this.scale, 10 * this.scale, 999, 'rgba(255,255,255,0.7)');
+    utils.setTextStyle(ctx, 11 * this.scale, 'bold', WARNING, 'center', 'middle');
+    ctx.globalAlpha = 0.92;
+    ctx.fillText('决战区', arenaStartX + arenaWidth / 2, arenaTopY + 16 * this.scale);
+    ctx.restore();
   }
 
   (this.level.setPieces || []).forEach(function (piece) {
@@ -4002,10 +3387,6 @@ MarvelMinigameRuntime.prototype.drawWorld = function (ctx) {
     this.drawExtractionExit(ctx, exit, !exitLocked);
   }
 
-  if (this.bossArenaLockActive) {
-    this.drawBossArenaLock(ctx);
-  }
-
   this.enemies.forEach(function (enemy) {
     if (!enemy.active && !enemy.isDead) {
       return;
@@ -4024,16 +3405,74 @@ MarvelMinigameRuntime.prototype.drawWorld = function (ctx) {
     }
   }, this);
 
+  this.drawThorUltimateStrike(ctx);
+
   this.projectiles.forEach(function (projectile) {
     this.drawProjectile(ctx, projectile);
   }, this);
 
   this.drawPlayer(ctx, this.player);
 
-  this.effects.forEach(function (effect) {
-    this.drawEffect(ctx, effect);
-  }, this);
+  ctx.restore();
+};
 
+MarvelMinigameRuntime.prototype.drawThorUltimateStrike = function (ctx) {
+  var cue = this.thorUltimateStrike;
+  var now;
+  var duration;
+  var progress;
+  var alpha;
+  var beamWidth;
+  var beamHeight;
+  var beamX;
+  var beamY;
+  var pulseRadius;
+  var image;
+
+  if (!cue) {
+    return;
+  }
+
+  now = Date.now();
+  if (now >= cue.until) {
+    this.thorUltimateStrike = null;
+    return;
+  }
+
+  duration = Math.max(1, cue.until - cue.startedAt);
+  progress = utils.clamp((now - cue.startedAt) / duration, 0, 1);
+  alpha = 0.9 - progress * 0.55;
+  beamWidth = 84 * this.scale;
+  beamHeight = 240 * this.scale;
+  beamX = cue.x - beamWidth / 2;
+  beamY = cue.y - beamHeight + 18 * this.scale;
+  pulseRadius = (34 + progress * 18) * this.scale;
+  image = this.assets.get('lightningBolt');
+
+  ctx.save();
+  ctx.globalAlpha = 0.14 + alpha * 0.24;
+  ctx.fillStyle = 'rgba(123, 199, 255, 0.9)';
+  ctx.beginPath();
+  ctx.arc(cue.x, cue.y + 2 * this.scale, pulseRadius, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.globalAlpha = 0.68 + alpha * 0.22;
+  if (!this.drawImageFit(ctx, image, beamX, beamY, beamWidth, beamHeight, ctx.globalAlpha)) {
+    ctx.strokeStyle = 'rgba(123, 199, 255, 0.92)';
+    ctx.lineWidth = 4 * this.scale;
+    ctx.beginPath();
+    ctx.moveTo(cue.x, beamY);
+    ctx.lineTo(cue.x - 10 * this.scale, cue.y - 86 * this.scale);
+    ctx.lineTo(cue.x + 8 * this.scale, cue.y - 48 * this.scale);
+    ctx.lineTo(cue.x - 6 * this.scale, cue.y - 10 * this.scale);
+    ctx.lineTo(cue.x + 4 * this.scale, cue.y + 8 * this.scale);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 0.88 - progress * 0.4;
+  ctx.strokeStyle = 'rgba(186, 231, 255, 0.95)';
+  ctx.lineWidth = 3 * this.scale;
+  ctx.beginPath();
+  ctx.arc(cue.x, cue.y + 2 * this.scale, pulseRadius * 0.72, 0, Math.PI * 2);
+  ctx.stroke();
   ctx.restore();
 };
 
@@ -4120,38 +3559,6 @@ MarvelMinigameRuntime.prototype.drawExtractionExit = function (ctx, exit, unlock
     ctx.stroke();
   }
 
-  ctx.restore();
-};
-
-MarvelMinigameRuntime.prototype.drawBossArenaLock = function (ctx) {
-  var now = Date.now();
-  var pulse = 0.5 + 0.5 * Math.sin(now * 0.008);
-  var beamHeight = 178 * this.scale;
-  var x = this.bossArenaLockX;
-
-  ctx.save();
-  ctx.globalAlpha = 0.22 + pulse * 0.16;
-  ctx.fillStyle = DANGER;
-  utils.fillRoundRect(
-    ctx,
-    x - 12 * this.scale,
-    this.level.floorY - beamHeight,
-    24 * this.scale,
-    beamHeight,
-    999,
-    DANGER
-  );
-  ctx.globalAlpha = 1;
-  ctx.strokeStyle = WARNING;
-  ctx.lineWidth = 3 * this.scale;
-  ctx.beginPath();
-  ctx.moveTo(x, this.level.floorY - beamHeight);
-  ctx.lineTo(x, this.level.floorY);
-  ctx.stroke();
-  this.drawImageFit(ctx, this.assets.get('lightningBolt'), x - 26 * this.scale, this.level.floorY - beamHeight - 12 * this.scale, 52 * this.scale, beamHeight + 20 * this.scale, 0.72);
-  utils.fillRoundRect(ctx, x - 26 * this.scale, this.level.floorY - 16 * this.scale, 52 * this.scale, 16 * this.scale, 999, 'rgba(255, 118, 100, 0.28)');
-  utils.setTextStyle(ctx, 10 * this.scale, 'bold', WARNING, 'center', 'middle');
-  ctx.fillText('封锁', x, this.level.floorY - beamHeight - 10 * this.scale);
   ctx.restore();
 };
 
@@ -4340,16 +3747,28 @@ MarvelMinigameRuntime.prototype.drawHazard = function (ctx, hazard) {
 
 MarvelMinigameRuntime.prototype.drawProjectile = function (ctx, projectile) {
   var image = null;
+  var lightningAlpha;
   if (projectile.team === 'player') {
-    if (this.hero.key === 'ironman') {
-      image = this.assets.get('repulsorBlast');
-    } else if (this.hero.key === 'thor') {
+    if (projectile.visualType === 'thunder') {
       image = this.assets.get('mjolnirProjectile');
-    } else if (this.hero.key === 'hulk') {
+    } else if (projectile.visualType === 'gamma') {
       image = this.assets.get('groundShockwave');
     }
   } else if (projectile.team === 'enemy') {
     image = this.assets.get('powerStone');
+  }
+
+  if (projectile.team === 'player' && projectile.visualType === 'thunder') {
+    lightningAlpha = 0.24 + (Math.sin(projectile.age * 26) + 1) * 0.16;
+    this.drawImageFit(
+      ctx,
+      this.assets.get('lightningBolt'),
+      projectile.x - 16 * this.scale,
+      projectile.y - 18 * this.scale,
+      projectile.width + 32 * this.scale,
+      projectile.height + 36 * this.scale,
+      lightningAlpha
+    );
   }
 
   if (!this.drawImageFit(ctx, image, projectile.x, projectile.y, projectile.width, projectile.height, projectile.team === 'enemy' ? 0.92 : 1)) {
@@ -4427,12 +3846,6 @@ MarvelMinigameRuntime.prototype.drawPlayer = function (ctx, player) {
 
   ctx.restore();
 
-  if (this.transitionMessage && this.state === 'playing') {
-    ctx.save();
-    utils.setTextStyle(ctx, 13 * this.scale, null, SOFT_INK, 'center', 'middle');
-    ctx.fillText(this.transitionMessage, this.width / 2, this.height - 136 * this.scale);
-    ctx.restore();
-  }
 };
 
 MarvelMinigameRuntime.prototype.drawEnemy = function (ctx, enemy) {
@@ -4502,23 +3915,8 @@ MarvelMinigameRuntime.prototype.drawEnemy = function (ctx, enemy) {
   if (!enemy.isDead) {
     var hpWidth = enemy.width;
     var hpRatio = utils.clamp(enemy.health / enemy.maxHealth, 0, 1);
-    var variantLabel = enemy.type === 'drone'
-      ? '空巡'
-      : (enemy.variant === 'artillery' ? '炮击' : (enemy.variant === 'brute' ? '重装' : (enemy.variant === 'skirmisher' ? '游击' : '')));
-    var variantColor = enemy.type === 'drone'
-      ? ACCENT
-      : (enemy.variant === 'artillery' ? ACCENT : (enemy.variant === 'brute' ? WARNING : (enemy.variant === 'skirmisher' ? SUCCESS : SOFT_INK)));
-    var labelWidth = enemy.type === 'drone'
-      ? Math.max(56 * this.scale, enemy.width * 0.96)
-      : Math.max(44 * this.scale, enemy.width * 0.82);
     utils.fillRoundRect(ctx, enemy.x, enemy.y - 10 * this.scale, hpWidth, 6 * this.scale, 999, 'rgba(255,255,255,0.16)');
     utils.fillRoundRect(ctx, enemy.x, enemy.y - 10 * this.scale, hpWidth * hpRatio, 6 * this.scale, 999, enemy.type === 'boss' ? WARNING : DANGER);
-    if (variantLabel && enemy.type !== 'boss') {
-      utils.fillRoundRect(ctx, enemy.x, enemy.y - 28 * this.scale, labelWidth, 14 * this.scale, 999, 'rgba(10, 15, 32, 0.74)');
-      utils.strokeRoundRect(ctx, enemy.x, enemy.y - 28 * this.scale, labelWidth, 14 * this.scale, 999, variantColor, 1.5);
-      utils.setTextStyle(ctx, 8 * this.scale, 'bold', variantColor, 'center', 'middle');
-      ctx.fillText(variantLabel, enemy.x + labelWidth / 2, enemy.y - 21 * this.scale);
-    }
   }
 
   if (weakened) {
@@ -4533,197 +3931,10 @@ MarvelMinigameRuntime.prototype.drawEnemy = function (ctx, enemy) {
   }
 };
 
-MarvelMinigameRuntime.prototype.drawEffect = function (ctx, effect) {
-  var progress = effect.age / effect.duration;
-  var cameraX = this.cameraX;
-  var x = effect.x - cameraX;
-  var y = effect.staticY ? effect.y : effect.y - effect.age * 26 * this.scale;
-
-  ctx.save();
-  ctx.globalAlpha = 1 - progress;
-  ctx.strokeStyle = effect.color;
-  ctx.fillStyle = effect.color;
-
-  if (effect.type === 'text') {
-    utils.setTextStyle(ctx, 14 * this.scale, 'bold', effect.color, 'center', 'middle');
-    ctx.fillText(effect.label, x, y);
-  } else if (effect.type === 'suppressed' || effect.type === 'restored') {
-    ctx.lineWidth = 3 * this.scale;
-    ctx.beginPath();
-    ctx.arc(x, y, 14 * this.scale + 16 * this.scale * progress, 0, Math.PI * 2);
-    ctx.stroke();
-    utils.setTextStyle(ctx, 10 * this.scale, 'bold', effect.color, 'center', 'middle');
-    ctx.fillText(effect.type === 'suppressed' ? '关' : '开', x, y);
-  } else if (effect.type === 'impact') {
-    ctx.lineWidth = 4 * this.scale;
-    ctx.beginPath();
-    ctx.moveTo(x - 18 * this.scale, y);
-    ctx.lineTo(x + 18 * this.scale, y);
-    ctx.moveTo(x, y - 18 * this.scale);
-    ctx.lineTo(x, y + 18 * this.scale);
-    ctx.moveTo(x - 12 * this.scale, y - 12 * this.scale);
-    ctx.lineTo(x + 12 * this.scale, y + 12 * this.scale);
-    ctx.moveTo(x + 12 * this.scale, y - 12 * this.scale);
-    ctx.lineTo(x - 12 * this.scale, y + 12 * this.scale);
-    ctx.stroke();
-  } else if (effect.type === 'repulsorHit') {
-    if (!this.drawImageFit(ctx, this.assets.get('repulsorBlast'), x - 24 * this.scale, y - 20 * this.scale, 48 * this.scale, 40 * this.scale, 0.9)) {
-      ctx.lineWidth = 3 * this.scale;
-      ctx.beginPath();
-      ctx.arc(x, y, 12 * this.scale + 14 * this.scale * progress, 0, Math.PI * 2);
-      ctx.stroke();
-    }
-    ctx.lineWidth = 2 * this.scale;
-    ctx.beginPath();
-    ctx.moveTo(x - 18 * this.scale, y);
-    ctx.lineTo(x + 18 * this.scale, y);
-    ctx.stroke();
-  } else if (effect.type === 'repulsorLanding') {
-    if (!this.drawImageFit(ctx, this.assets.get('unibeamEffect'), x - 72 * this.scale, y - 24 * this.scale, 144 * this.scale, 48 * this.scale, 0.72)) {
-      ctx.lineWidth = 3 * this.scale;
-      ctx.beginPath();
-      ctx.arc(x, y, 20 * this.scale + 24 * this.scale * progress, 0, Math.PI * 2);
-      ctx.stroke();
-    }
-    ctx.lineWidth = 2 * this.scale;
-    ctx.beginPath();
-    ctx.arc(x, y, 14 * this.scale + 18 * this.scale * progress, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(x, y - 18 * this.scale);
-    ctx.lineTo(x, y + 18 * this.scale);
-    ctx.moveTo(x - 18 * this.scale, y);
-    ctx.lineTo(x + 18 * this.scale, y);
-    ctx.stroke();
-  } else if (effect.type === 'thunderHit') {
-    if (!this.drawImageFit(ctx, this.assets.get('lightningBolt'), x - 22 * this.scale, y - 46 * this.scale, 44 * this.scale, 74 * this.scale, 0.88)) {
-      ctx.lineWidth = 4 * this.scale;
-      ctx.beginPath();
-      ctx.moveTo(x, y - 34 * this.scale);
-      ctx.lineTo(x - 10 * this.scale, y - 8 * this.scale);
-      ctx.lineTo(x + 4 * this.scale, y + 4 * this.scale);
-      ctx.lineTo(x - 4 * this.scale, y + 26 * this.scale);
-      ctx.stroke();
-    }
-    ctx.lineWidth = 3 * this.scale;
-    ctx.beginPath();
-    ctx.arc(x, y + 8 * this.scale, 14 * this.scale + 18 * this.scale * progress, 0, Math.PI * 2);
-    ctx.stroke();
-  } else if (effect.type === 'thunderLanding') {
-    if (!this.drawImageFit(ctx, this.assets.get('lightningBolt'), x - 24 * this.scale, y - 76 * this.scale, 48 * this.scale, 112 * this.scale, 0.8)) {
-      ctx.lineWidth = 4 * this.scale;
-      ctx.beginPath();
-      ctx.moveTo(x, y - 56 * this.scale);
-      ctx.lineTo(x - 14 * this.scale, y - 12 * this.scale);
-      ctx.lineTo(x + 6 * this.scale, y + 6 * this.scale);
-      ctx.lineTo(x - 4 * this.scale, y + 28 * this.scale);
-      ctx.stroke();
-    }
-    ctx.lineWidth = 3 * this.scale;
-    ctx.beginPath();
-    ctx.arc(x, y + 10 * this.scale, 18 * this.scale + 22 * this.scale * progress, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.arc(x, y + 10 * this.scale, 7 * this.scale + 12 * this.scale * progress, 0, Math.PI * 2);
-    ctx.stroke();
-  } else if (effect.type === 'gammaHit') {
-    if (!this.drawImageFit(ctx, this.assets.get('groundShockwave'), x - 48 * this.scale, y - 26 * this.scale, 96 * this.scale, 52 * this.scale, 0.82)) {
-      ctx.lineWidth = 4 * this.scale;
-      ctx.beginPath();
-      ctx.arc(x, y, 18 * this.scale + 20 * this.scale * progress, Math.PI, Math.PI * 2);
-      ctx.stroke();
-    }
-    ctx.beginPath();
-    ctx.moveTo(x - 20 * this.scale, y + 2 * this.scale);
-    ctx.lineTo(x - 8 * this.scale, y - 14 * this.scale);
-    ctx.lineTo(x + 4 * this.scale, y + 2 * this.scale);
-    ctx.lineTo(x + 18 * this.scale, y - 12 * this.scale);
-    ctx.stroke();
-  } else if (effect.type === 'gammaLanding') {
-    if (!this.drawImageFit(ctx, this.assets.get('groundShockwave'), x - 70 * this.scale, y - 34 * this.scale, 140 * this.scale, 68 * this.scale, 0.86)) {
-      ctx.lineWidth = 4 * this.scale;
-      ctx.beginPath();
-      ctx.arc(x, y, 22 * this.scale + 28 * this.scale * progress, Math.PI, Math.PI * 2);
-      ctx.stroke();
-    }
-    ctx.beginPath();
-    ctx.moveTo(x - 28 * this.scale, y + 2 * this.scale);
-    ctx.lineTo(x - 14 * this.scale, y - 18 * this.scale);
-    ctx.lineTo(x - 2 * this.scale, y + 2 * this.scale);
-    ctx.lineTo(x + 12 * this.scale, y - 14 * this.scale);
-    ctx.lineTo(x + 26 * this.scale, y + 4 * this.scale);
-    ctx.stroke();
-  } else if (effect.type === 'slash') {
-    ctx.lineWidth = 5 * this.scale;
-    ctx.beginPath();
-    ctx.moveTo(x - 22 * this.scale, y + 14 * this.scale);
-    ctx.lineTo(x - 4 * this.scale, y - 12 * this.scale);
-    ctx.lineTo(x + 24 * this.scale, y - 20 * this.scale);
-    ctx.stroke();
-  } else if (effect.type === 'blast' || effect.type === 'skill' || effect.type === 'throw' || effect.type === 'enemy') {
-    if (!this.drawImageFit(ctx, this.assets.get('powerStone'), x - 16 * this.scale, y - 16 * this.scale, 32 * this.scale, 32 * this.scale, 0.72)) {
-      ctx.lineWidth = 3 * this.scale;
-      ctx.beginPath();
-      ctx.arc(x, y, 12 * this.scale + 18 * this.scale * progress, 0, Math.PI * 2);
-      ctx.stroke();
-    }
-  } else if (effect.type === 'explode' || effect.type === 'slam') {
-    if (!this.drawImageFit(ctx, this.assets.get(effect.type === 'slam' ? 'groundShockwave' : 'shockwave'), x - 54 * this.scale, y - 54 * this.scale, 108 * this.scale, 108 * this.scale, 0.84)) {
-      ctx.lineWidth = 4 * this.scale;
-      ctx.beginPath();
-      ctx.arc(x, y, 18 * this.scale + 36 * this.scale * progress, 0, Math.PI * 2);
-      ctx.stroke();
-    }
-  } else if (effect.type === 'landing') {
-    if (!this.drawImageFit(ctx, this.assets.get('groundShockwave'), x - 44 * this.scale, y - 30 * this.scale, 88 * this.scale, 56 * this.scale, 0.7)) {
-      ctx.lineWidth = 3 * this.scale;
-      ctx.beginPath();
-      ctx.arc(x, y, 16 * this.scale + 20 * this.scale * progress, Math.PI, Math.PI * 2);
-      ctx.stroke();
-    }
-  } else if (effect.type === 'ultimate') {
-    ctx.fillRect(x - 120 * this.scale, y - 10 * this.scale, 240 * this.scale, 20 * this.scale);
-  } else if (effect.type === 'finisher') {
-    if (!this.drawImageFit(
-      ctx,
-      this.assets.get('unibeamEffect'),
-      x - effect.width / 2,
-      y - effect.height / 2,
-      effect.width,
-      effect.height,
-      0.92
-    )) {
-      utils.fillRoundRect(ctx, x - effect.width / 2, y - effect.height / 2, effect.width, effect.height, 24 * this.scale, 'rgba(255, 118, 100, 0.52)');
-    }
-  } else if (effect.type === 'finisherImpact') {
-    if (!this.drawImageFit(ctx, this.assets.get('shockwave'), x - 72 * this.scale, y - 72 * this.scale, 144 * this.scale, 144 * this.scale, 0.92)) {
-      ctx.lineWidth = 6 * this.scale;
-      ctx.beginPath();
-      ctx.arc(x, y, 26 * this.scale + 42 * this.scale * progress, 0, Math.PI * 2);
-      ctx.stroke();
-    }
-    ctx.globalAlpha = (1 - progress) * 0.26;
-    ctx.fillStyle = 'rgba(255, 118, 100, 0.72)';
-    ctx.fillRect(x - 120 * this.scale, y - 90 * this.scale, 240 * this.scale, 180 * this.scale);
-  } else if (effect.type === 'lightning') {
-    if (!this.drawImageFit(ctx, this.assets.get('lightningBolt'), x - 28 * this.scale, y - 124 * this.scale, 56 * this.scale, 178 * this.scale, 0.92)) {
-      ctx.lineWidth = 5 * this.scale;
-      ctx.beginPath();
-      ctx.moveTo(x, y - 120 * this.scale);
-      ctx.lineTo(x - 18 * this.scale, y - 36 * this.scale);
-      ctx.lineTo(x + 8 * this.scale, y - 12 * this.scale);
-      ctx.lineTo(x - 6 * this.scale, y + 54 * this.scale);
-      ctx.stroke();
-    }
-  }
-  ctx.restore();
-};
-
 MarvelMinigameRuntime.prototype.drawHud = function (ctx) {
   var player = this.player;
   var hero = this.hero;
   var boss = this.getAliveBoss();
-  var activeEncounter = this.getActiveEncounterState();
   var hpRatio = player ? utils.clamp(player.health / player.maxHealth, 0, 1) : 0;
   var barWidth = 220 * this.scale;
   var topY = 20 * this.scale;
@@ -4768,32 +3979,54 @@ MarvelMinigameRuntime.prototype.drawHud = function (ctx) {
     }
   }
 
-  if (player && Date.now() - (player.lastFallImpactAt || 0) < 240) {
-    utils.setTextStyle(ctx, 11 * this.scale, 'bold', WARNING, 'left', 'middle');
-    ctx.fillText('重摔', 36 * this.scale, topY + 72 * this.scale);
-  }
-
-  if (activeEncounter) {
-    var remainingEnemies = Math.max(0, activeEncounter.total - activeEncounter.defeated);
-    var chipX = 320 * this.scale;
-    var chipY = topY + 14 * this.scale;
-    var chipWidth = 170 * this.scale;
-    utils.fillRoundRect(ctx, chipX, chipY, chipWidth, 46 * this.scale, 16 * this.scale, 'rgba(7, 11, 24, 0.72)');
-    utils.strokeRoundRect(ctx, chipX, chipY, chipWidth, 46 * this.scale, 16 * this.scale, WARNING, 1.5);
-    utils.setTextStyle(ctx, 10 * this.scale, 'bold', WARNING, 'left', 'middle');
-    ctx.fillText('遭遇', chipX + 12 * this.scale, chipY + 14 * this.scale);
-    utils.setTextStyle(ctx, 12 * this.scale, 'bold', INK, 'left', 'middle');
-    ctx.fillText(activeEncounter.title, chipX + 12 * this.scale, chipY + 31 * this.scale);
-    utils.setTextStyle(ctx, 18 * this.scale, 'bold', WARNING, 'right', 'middle');
-    ctx.fillText(String(remainingEnemies), chipX + chipWidth - 14 * this.scale, chipY + 24 * this.scale);
-  }
-
   this.pauseRect = this.getPauseRect();
   utils.drawButton(ctx, this.pauseRect, 'II', {
     fillStyle: 'rgba(10, 15, 32, 0.88)',
     strokeStyle: 'rgba(255,255,255,0.18)',
     fontSize: 18 * this.scale
   });
+  ctx.restore();
+};
+
+MarvelMinigameRuntime.prototype.drawBossArenaCue = function (ctx) {
+  var now = Date.now();
+  var elapsed = now - this.bossArenaActivatedAt;
+  var duration = 1600;
+  var progress;
+  var alpha;
+  var panelWidth;
+  var panelHeight;
+  var panelX;
+  var panelY;
+  var title;
+  var subtitle;
+
+  if (!this.bossArenaActive || !this.bossArenaActivatedAt || elapsed < 0 || elapsed > duration) {
+    return;
+  }
+
+  progress = utils.clamp(elapsed / duration, 0, 1);
+  alpha = progress < 0.18
+    ? progress / 0.18
+    : (progress > 0.8 ? (1 - progress) / 0.2 : 1);
+  panelWidth = Math.min(240 * this.scale, this.width - 120 * this.scale);
+  panelHeight = 68 * this.scale;
+  panelX = this.width / 2 - panelWidth / 2;
+  panelY = this.height * 0.24 - panelHeight / 2;
+  title = '决战区已激活';
+  subtitle = '后路已封锁，击败首领结束战斗';
+
+  ctx.save();
+  ctx.globalAlpha = utils.clamp(alpha, 0, 1);
+  utils.drawPanel(ctx, panelX, panelY, panelWidth, panelHeight, {
+    fillStyle: 'rgba(18, 12, 8, 0.82)',
+    strokeStyle: 'rgba(255, 184, 106, 0.72)',
+    radius: 18
+  });
+  utils.setTextStyle(ctx, 17 * this.scale, 'bold', WARNING, 'center', 'middle');
+  ctx.fillText(title, this.width / 2, panelY + 27 * this.scale);
+  utils.setTextStyle(ctx, 11 * this.scale, null, SOFT_INK, 'center', 'middle');
+  ctx.fillText(subtitle, this.width / 2, panelY + 46 * this.scale);
   ctx.restore();
 };
 
@@ -4839,8 +4072,8 @@ MarvelMinigameRuntime.prototype.drawControls = function (ctx) {
 
   this.drawActionButton(ctx, buttons.jump, '跳', ACCENT, 0);
   this.drawActionButton(ctx, buttons.attack, '攻', WARNING, Math.max(0, player.attackAvailableAt - now));
-  this.drawActionButton(ctx, buttons.skill, '技', this.hero.glowStyle, Math.max(0, player.skillAvailableAt - now));
-  this.drawActionButton(ctx, buttons.ultimate, '绝', DANGER, Math.max(0, player.ultimateAvailableAt - now));
+  this.drawActionButton(ctx, buttons.skill, '技', this.hero.glowStyle, 0);
+  this.drawActionButton(ctx, buttons.ultimate, '绝', DANGER, 0);
   ctx.restore();
 };
 
@@ -4888,17 +4121,17 @@ MarvelMinigameRuntime.prototype.drawActionButton = function (ctx, rect, label, c
 
 MarvelMinigameRuntime.prototype.renderPauseOverlay = function (ctx) {
   var buttons = this.getPauseMenuButtons();
+  var panel = buttons.panel;
   var title = this.state === 'paused-system' ? '系统暂停' : '游戏暂停';
-  var hint = this.state === 'paused-system' ? '返回后继续任务' : '恢复后继续战斗';
 
   ctx.save();
   ctx.fillStyle = 'rgba(0, 0, 0, 0.48)';
   ctx.fillRect(0, 0, this.width, this.height);
-  utils.drawPanel(ctx, this.width / 2 - 180 * this.scale, this.height / 2 - 150 * this.scale, 360 * this.scale, 300 * this.scale);
+  utils.drawPanel(ctx, panel.x, panel.y, panel.width, panel.height);
   utils.setTextStyle(ctx, 28 * this.scale, 'bold', INK, 'center', 'middle');
-  ctx.fillText(title, this.width / 2, this.height / 2 - 104 * this.scale);
-  utils.setTextStyle(ctx, 14 * this.scale, null, SOFT_INK, 'center', 'middle');
-  ctx.fillText(hint, this.width / 2, this.height / 2 - 76 * this.scale);
+  ctx.fillText(title, this.width / 2, panel.y + 46 * this.scale);
+  utils.setTextStyle(ctx, 13 * this.scale, null, SOFT_INK, 'center', 'middle');
+  ctx.fillText(this.level.chapterLabel + ' · ' + this.level.name, this.width / 2, panel.y + 76 * this.scale);
 
   utils.drawButton(ctx, buttons.resume, '继续游戏', {
     fillStyle: 'rgba(59, 117, 255, 0.9)',
@@ -4918,118 +4151,65 @@ MarvelMinigameRuntime.prototype.renderPauseOverlay = function (ctx) {
 MarvelMinigameRuntime.prototype.renderResultOverlay = function (ctx, victory) {
   var layout = this.getResultOverlayLayout(victory);
   var buttons = this.getResultButtons();
-  var hasContinue = this.canContinueFromCheckpoint();
-  var assessment = this.getLevelAssessment(victory);
   var stats = this.levelStats || {};
-  var recordUpdate = this.lastRecordUpdate;
   var panelX = layout.panelX;
   var panelHeight = layout.panelHeight;
   var panelY = layout.panelY;
   var panelWidth = layout.panelWidth;
   var hasNext = victory && this.hasNextLevel();
-  var nextLevel = hasNext ? this.campaign[this.levelIndex + 1] : null;
-  var title = victory ? (hasNext ? '关卡完成' : '战役完成') : '任务失败';
-  var statusLabel = victory ? (hasNext ? '下一关' : '战役状态') : '未完成目标';
-  var statusValue = victory ? (hasNext ? nextLevel.chapterLabel : '已通关') : '重试';
-  var restartLabel = victory ? (hasNext ? '进入下一关' : '再次出击') : '重新开始';
-  var checkpointLabel = this.activeCheckpoint ? this.activeCheckpoint.label : '未激活';
-  var compactChipWidth = 110 * this.scale;
-  var compactChipHeight = 58 * this.scale;
-  var compactChipGap = 10 * this.scale;
-  var compactChipX = panelX + (panelWidth - compactChipWidth * 3 - compactChipGap * 2) / 2;
+  var finalVictory = victory && !hasNext;
+  var title = victory ? (hasNext ? '关卡完成' : '全部通关') : '任务失败';
+  var restartLabel = victory ? (hasNext ? '进入下一关' : '完成') : '重新开始';
+  var subtitle = this.level.chapterLabel + ' · ' + this.level.name;
+  var chipWidth = 112 * this.scale;
+  var chipHeight = 58 * this.scale;
+  var chipGap = 10 * this.scale;
+  var chipStartX = panelX + (panelWidth - chipWidth * 3 - chipGap * 2) / 2;
 
   ctx.save();
   ctx.fillStyle = 'rgba(0, 0, 0, 0.56)';
   ctx.fillRect(0, 0, this.width, this.height);
   utils.drawPanel(ctx, panelX, panelY, panelWidth, panelHeight, {
     fillStyle: 'rgba(8, 13, 28, 0.92)',
-    strokeStyle: victory ? 'rgba(108, 225, 140, 0.28)' : 'rgba(255, 118, 100, 0.26)',
-    radius: 24
+    strokeStyle: victory ? 'rgba(108, 225, 140, 0.22)' : 'rgba(255, 118, 100, 0.22)',
+    radius: 22
   });
-  utils.setTextStyle(ctx, 30 * this.scale, 'bold', INK, 'center', 'middle');
-  ctx.fillText(title, this.width / 2, panelY + 52 * this.scale);
-  utils.fillRoundRect(ctx, panelX + panelWidth - 88 * this.scale, panelY + 26 * this.scale, 56 * this.scale, 28 * this.scale, 999, 'rgba(255,255,255,0.08)');
-  utils.strokeRoundRect(ctx, panelX + panelWidth - 88 * this.scale, panelY + 26 * this.scale, 56 * this.scale, 28 * this.scale, 999, assessment.color, 2);
-  utils.setTextStyle(ctx, 16 * this.scale, 'bold', assessment.color, 'center', 'middle');
-  ctx.fillText(assessment.rank, panelX + panelWidth - 60 * this.scale, panelY + 40 * this.scale);
-  utils.setTextStyle(ctx, 14 * this.scale, null, SOFT_INK, 'center', 'middle');
-  ctx.fillText(this.hero.name + ' · ' + this.level.chapterLabel + ' · ' + this.level.name, this.width / 2, panelY + 84 * this.scale);
-  ctx.fillText('生存时间 ' + this.elapsedTime.toFixed(1) + ' 秒', this.width / 2, panelY + 108 * this.scale);
-  utils.setTextStyle(ctx, 12 * this.scale, null, '#d8deef', 'center', 'middle');
-  ctx.fillText(assessment.summary, this.width / 2, panelY + 128 * this.scale);
+  utils.setTextStyle(ctx, victory ? 28 * this.scale : 26 * this.scale, 'bold', INK, 'center', 'middle');
+  ctx.fillText(title, this.width / 2, panelY + 44 * this.scale);
+  utils.setTextStyle(ctx, 13 * this.scale, null, SOFT_INK, 'center', 'middle');
+  if (finalVictory) {
+    subtitle = '三关战役已全部完成';
+  }
+  ctx.fillText(subtitle, this.width / 2, panelY + 74 * this.scale);
 
   if (!victory) {
-    this.drawSummaryChip(ctx, compactChipX, panelY + 144 * this.scale, compactChipWidth, compactChipHeight, '剩余生命', Math.max(0, Math.round(this.player.health)));
-    this.drawSummaryChip(ctx, compactChipX + compactChipWidth + compactChipGap, panelY + 144 * this.scale, compactChipWidth, compactChipHeight, '行动评级', assessment.rank);
-    this.drawSummaryChip(
-      ctx,
-      compactChipX + (compactChipWidth + compactChipGap) * 2,
-      panelY + 144 * this.scale,
-      compactChipWidth,
-      compactChipHeight,
-      hasContinue ? '检查点' : '承伤',
-      hasContinue ? checkpointLabel : Math.round(stats.damageTaken || 0)
-    );
-
-    if (hasContinue) {
-      utils.drawButton(ctx, buttons.continue, '检查点继续', {
-        fillStyle: 'rgba(59, 117, 255, 0.92)',
-        fontSize: 17 * this.scale
-      });
-    }
-
-    utils.drawButton(ctx, buttons.restart, restartLabel, {
-      fillStyle: 'rgba(200, 57, 61, 0.9)',
-      fontSize: 17 * this.scale
-    });
-    utils.drawButton(ctx, buttons.select, '返回选人', {
-      fillStyle: 'rgba(255,255,255,0.1)',
-      fontSize: 17 * this.scale
-    });
-    ctx.restore();
-    return;
-  }
-
-  if (victory && recordUpdate) {
-    utils.setTextStyle(ctx, 11 * this.scale, 'bold', recordUpdate.improved ? SUCCESS : ACCENT, 'center', 'middle');
-    ctx.fillText(
-      recordUpdate.improved
-        ? ('新纪录 ' + recordUpdate.rank + ' · ' + recordUpdate.bestTime.toFixed(1) + '秒'
-          + (recordUpdate.unlockedLevelLabel ? (' · 解锁 ' + recordUpdate.unlockedLevelLabel) : ''))
-        : ('个人最佳 ' + recordUpdate.rank + ' · ' + recordUpdate.bestTime.toFixed(1) + '秒'),
-      this.width / 2,
-      panelY + 146 * this.scale
-    );
-  }
-
-  this.drawSummaryChip(ctx, panelX + 28 * this.scale, panelY + 164 * this.scale, 160 * this.scale, 72 * this.scale, '剩余生命', Math.max(0, Math.round(this.player.health)));
-  this.drawSummaryChip(ctx, panelX + 212 * this.scale, panelY + 164 * this.scale, 160 * this.scale, 72 * this.scale, statusLabel, statusValue);
-  this.drawSummaryChip(ctx, panelX + 28 * this.scale, panelY + 248 * this.scale, 160 * this.scale, 72 * this.scale, '行动评级', assessment.rank);
-  this.drawSummaryChip(
-    ctx,
-    panelX + 212 * this.scale,
-    panelY + 248 * this.scale,
-    160 * this.scale,
-    72 * this.scale,
-    hasContinue ? '检查点' : '承受伤害',
-    hasContinue ? checkpointLabel : Math.round(stats.damageTaken || 0)
-  );
-
-  if (hasContinue) {
-    utils.drawButton(ctx, buttons.continue, '检查点继续', {
-      fillStyle: 'rgba(59, 117, 255, 0.92)',
-      fontSize: 18 * this.scale
-    });
+    chipWidth = 118 * this.scale;
+    chipHeight = 50 * this.scale;
+    chipGap = 10 * this.scale;
+    chipStartX = panelX + (panelWidth - chipWidth * 2 - chipGap) / 2;
+    this.drawSummaryChip(ctx, chipStartX, panelY + 96 * this.scale, chipWidth, chipHeight, '生存时间', this.elapsedTime.toFixed(1) + '秒');
+    this.drawSummaryChip(ctx, chipStartX + chipWidth + chipGap, panelY + 96 * this.scale, chipWidth, chipHeight, '承伤', Math.round(stats.damageTaken || 0));
+  } else {
+    chipWidth = 104 * this.scale;
+    chipHeight = 54 * this.scale;
+    chipGap = 8 * this.scale;
+    chipStartX = panelX + (panelWidth - chipWidth * 3 - chipGap * 2) / 2;
+    ctx.fillText(finalVictory ? '恭喜完成全部任务' : ('生存时间 ' + this.elapsedTime.toFixed(1) + ' 秒'), this.width / 2, panelY + 104 * this.scale);
+    this.drawSummaryChip(ctx, chipStartX, panelY + 126 * this.scale, chipWidth, chipHeight, '剩余生命', Math.max(0, Math.round(this.player.health)));
+    this.drawSummaryChip(ctx, chipStartX + chipWidth + chipGap, panelY + 126 * this.scale, chipWidth, chipHeight, '生存时间', this.elapsedTime.toFixed(1) + '秒');
+    this.drawSummaryChip(ctx, chipStartX + (chipWidth + chipGap) * 2, panelY + 126 * this.scale, chipWidth, chipHeight, '承伤', Math.round(stats.damageTaken || 0));
   }
 
   utils.drawButton(ctx, buttons.restart, restartLabel, {
     fillStyle: victory ? 'rgba(59, 117, 255, 0.9)' : 'rgba(200, 57, 61, 0.9)',
-    fontSize: 18 * this.scale
+    fontSize: 16 * this.scale
   });
-  utils.drawButton(ctx, buttons.select, '返回选人', {
-    fillStyle: 'rgba(255,255,255,0.1)',
-    fontSize: 18 * this.scale
-  });
+  if (!victory || (!hasNext && !finalVictory)) {
+    utils.drawButton(ctx, buttons.select, '返回选人', {
+      fillStyle: 'rgba(255,255,255,0.1)',
+      fontSize: 15 * this.scale
+    });
+  }
   ctx.restore();
 };
 
@@ -5054,17 +4234,10 @@ MarvelMinigameRuntime.prototype.getLevelAssessment = function (victory) {
   var summary = '';
 
   if (!victory) {
-    if (this.canContinueFromCheckpoint()) {
-      return {
-        rank: '再战',
-        color: ACCENT,
-        summary: '检查点已经激活，抓住短暂空档重新稳住局面。'
-      };
-    }
     return {
       rank: '倒下',
       color: DANGER,
-      summary: '任务在撤离前失败了，下次尽量走更稳、更少换血。'
+      summary: '本关失败了，下次优先稳住走位和换血节奏。'
     };
   }
 
@@ -5082,11 +4255,7 @@ MarvelMinigameRuntime.prototype.getLevelAssessment = function (victory) {
     score += 1;
   }
 
-  if ((stats.checkpointContinues || 0) === 0) {
-    score += 2;
-  } else if ((stats.checkpointContinues || 0) === 1) {
-    score += 1;
-  }
+  score += 2;
 
   if ((stats.damageTaken || 0) <= (this.player ? this.player.maxHealth * 0.6 : 60)) {
     score += 1;
@@ -5103,10 +4272,8 @@ MarvelMinigameRuntime.prototype.getLevelAssessment = function (victory) {
     color = WARNING;
   }
 
-  if ((stats.checkpointContinues || 0) > 0) {
-    summary = '中途借助检查点追回局势，下次少重置就能拿到更高评级。';
-  } else if (healthRatio < 0.36) {
-    summary = '任务虽然完成，但代价偏高，下次撤离前尽量多留血量。';
+  if (healthRatio < 0.36) {
+    summary = '任务虽然完成，但代价偏高，下次尽量多留血量。';
   } else if (this.elapsedTime > 105) {
     summary = '推进比较稳，再压快清场节奏就能把评级继续往上提。';
   } else {
