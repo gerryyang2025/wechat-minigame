@@ -4,6 +4,7 @@ var utils = require('./utils');
 var entities = require('./entities');
 var gameMeta = require('./game-meta');
 var MiniGameAudio = require('./audio');
+var fontUtils = require('./font');
 var powerUpStyles = require('./powerup-style');
 
 var STORAGE_KEY = 'plane-game-best-score';
@@ -67,7 +68,35 @@ function normalizeTouch(touch) {
 }
 
 function setUiFont(ctx, size, weight) {
-  ctx.font = (weight ? weight + ' ' : '') + Math.round(size) + 'px serif';
+  fontUtils.applyCanvasFont(ctx, size, weight);
+}
+
+function setCoverFont(ctx, size, weight) {
+  fontUtils.applyCanvasFont(ctx, size, weight);
+}
+
+function drawCoverDisplayText(ctx, text, x, y, options) {
+  var settings = options || {};
+  var size = settings.size || 24;
+  var fillStyle = settings.fillStyle || INK;
+  var strokeStyle = settings.strokeStyle || 'rgba(255, 255, 255, 0.72)';
+  var lineWidth = settings.lineWidth || Math.max(1.4, size * 0.08);
+
+  ctx.save();
+  ctx.textAlign = settings.textAlign || 'center';
+  ctx.textBaseline = settings.textBaseline || 'middle';
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  ctx.shadowColor = settings.shadowColor || 'rgba(56, 46, 38, 0.14)';
+  ctx.shadowBlur = settings.shadowBlur || 0;
+  ctx.shadowOffsetY = settings.shadowOffsetY || Math.max(1, size * 0.05);
+  ctx.fillStyle = fillStyle;
+  ctx.strokeStyle = strokeStyle;
+  ctx.lineWidth = lineWidth;
+  setCoverFont(ctx, size, settings.weight || null);
+  ctx.strokeText(text, x, y);
+  ctx.fillText(text, x, y);
+  ctx.restore();
 }
 
 function drawPaperPanel(ctx, x, y, width, height, radius, fillStyle) {
@@ -100,8 +129,20 @@ function drawPencilButton(ctx, rect, label, options) {
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillStyle = textColor;
-  setUiFont(ctx, 19, 'bold');
-  ctx.fillText(label, rect.x + rect.width / 2, rect.y + rect.height / 2 + 2);
+  if (settings.displayStyle === 'cover') {
+    drawCoverDisplayText(ctx, label, rect.x + rect.width / 2, rect.y + rect.height / 2 + 2, {
+      size: settings.fontSize || 20,
+      fillStyle: textColor,
+      strokeStyle: settings.strokeStyle || 'rgba(255, 255, 255, 0.78)',
+      lineWidth: Math.max(0.9, (settings.fontSize || 20) * 0.055),
+      weight: settings.fontWeight || null,
+      shadowColor: 'rgba(70, 58, 45, 0.12)',
+      shadowOffsetY: 1.2
+    });
+  } else {
+    setUiFont(ctx, settings.fontSize || 19, 'bold');
+    ctx.fillText(label, rect.x + rect.width / 2, rect.y + rect.height / 2 + 2);
+  }
   ctx.restore();
 }
 
@@ -430,6 +471,7 @@ function PlaneMinigameRuntime(options) {
   this.reviveCount = 0;
   this.revivePending = false;
   this.reviveHideDetectedAt = 0;
+  this.pendingRunRecord = false;
   this.destroyed = false;
   this.raf = utils.getRequestAnimationFrame();
   this.lastTimestamp = 0;
@@ -563,26 +605,37 @@ PlaneMinigameRuntime.prototype.createPrimaryButtonRect = function () {
 };
 
 PlaneMinigameRuntime.prototype.getCoverLayout = function () {
-  var buttonWidth = Math.min(this.width * 0.62, 240);
-  var buttonHeight = Math.max(54, 56 * this.scale);
-  var contentWidth = Math.min(this.width - 36 * this.scale, 320 * this.scale);
-  var titleY = Math.max(this.safeTopInset + 34 * this.scale, this.height * 0.16);
-  var titleFontSize = Math.max(28, Math.round(34 * this.scale));
-  var sloganY = titleY + 28 * this.scale;
-  var sloganFontSize = Math.max(14, Math.round(16 * this.scale));
-  var buttonY = this.height - this.safeBottomInset - buttonHeight - 28 * this.scale;
-  var panelY = sloganY + 20 * this.scale;
-  var panelHeight = Math.max(226 * this.scale, buttonY - panelY - 34 * this.scale);
-  var previewHeight = Math.max(74 * this.scale, Math.min(94 * this.scale, panelHeight * 0.28));
+  var buttonWidth = Math.min(this.width * 0.5, 196 * this.scale);
+  var buttonHeight = Math.max(46, 48 * this.scale);
+  var contentWidth = Math.min(this.width - 48 * this.scale, 294 * this.scale);
+  var titleY = Math.max(this.safeTopInset + 44 * this.scale, this.height * 0.168);
+  var titleFontSize = Math.max(30, Math.round(36 * this.scale));
+  var sloganY = titleY + 34 * this.scale;
+  var sloganFontSize = Math.max(14, Math.round(15 * this.scale));
+  var panelY = sloganY + 28 * this.scale;
+  var previewHeight = Math.max(60 * this.scale, Math.min(76 * this.scale, this.height * 0.108));
   var previewWidth = previewHeight * (96 / 112);
-  var previewY = panelY + 18 * this.scale;
-  var descFontSize = Math.max(12, Math.round(13 * this.scale));
-  var descStartY = previewY + previewHeight + 30 * this.scale;
-  var authorY = panelY + panelHeight - 22 * this.scale;
-  var descAvailableHeight = Math.max(92 * this.scale, authorY - descStartY - 18 * this.scale);
+  var previewY = panelY + 16 * this.scale;
+  var descFontSize = Math.max(12, Math.round(12.2 * this.scale));
+  var descStartY = previewY + previewHeight + 18 * this.scale;
+  var descAvailableHeight;
   var descLineHeight = Math.max(
     19 * this.scale,
-    Math.min(24 * this.scale, descAvailableHeight / Math.max(1, gameMeta.COVER_DESCRIPTION_LINES.length))
+    22 * this.scale
+  );
+  var authorY = descStartY + descLineHeight * Math.max(1, gameMeta.COVER_DESCRIPTION_LINES.length) + 16 * this.scale;
+  var contentBottom = authorY + 18 * this.scale;
+  var desiredPanelHeight = Math.max(198 * this.scale, contentBottom - panelY + 18 * this.scale);
+  var buttonGap = 24 * this.scale;
+  var maxButtonY = this.height - this.safeBottomInset - buttonHeight - 28 * this.scale;
+  var maxPanelHeight = Math.max(192 * this.scale, maxButtonY - panelY - buttonGap);
+  var panelHeight = Math.min(desiredPanelHeight, maxPanelHeight);
+  var buttonY = panelY + panelHeight + buttonGap;
+  authorY = panelY + panelHeight - 20 * this.scale;
+  descAvailableHeight = Math.max(64 * this.scale, authorY - descStartY - 10 * this.scale);
+  descLineHeight = Math.max(
+    18 * this.scale,
+    Math.min(22 * this.scale, descAvailableHeight / Math.max(1, gameMeta.COVER_DESCRIPTION_LINES.length))
   );
 
   return {
@@ -601,6 +654,7 @@ PlaneMinigameRuntime.prototype.getCoverLayout = function () {
     previewY: previewY,
     previewWidth: previewWidth,
     previewHeight: previewHeight,
+    authorX: (this.width + contentWidth) / 2 - 18 * this.scale,
     authorY: authorY,
     buttonRect: {
       x: (this.width - buttonWidth) / 2,
@@ -719,13 +773,13 @@ PlaneMinigameRuntime.prototype.getPauseOverlayButtons = function () {
 };
 
 PlaneMinigameRuntime.prototype.getGameOverButtons = function () {
-  var buttonWidth = Math.min(this.width * 0.62, 240);
-  var buttonHeight = Math.max(52, 54 * this.scale);
-  var leaderboardHeight = Math.max(46, 48 * this.scale);
-  var leaderboardY = this.height * 0.82;
+  var buttonWidth = Math.min(this.width * 0.58, 226);
+  var buttonHeight = Math.max(46, 48 * this.scale);
+  var leaderboardHeight = Math.max(42, 44 * this.scale);
   var restartY = this.canReviveByShare()
-    ? this.height * 0.69
-    : this.height * 0.73;
+    ? this.height * 0.655
+    : this.height * 0.695;
+  var buttonGap = 12 * this.scale;
   var restartButton = {
     x: (this.width - buttonWidth) / 2,
     y: restartY,
@@ -734,7 +788,7 @@ PlaneMinigameRuntime.prototype.getGameOverButtons = function () {
   };
   var leaderboardButton = {
     x: restartButton.x,
-    y: leaderboardY,
+    y: restartY + buttonHeight + buttonGap,
     width: buttonWidth,
     height: leaderboardHeight
   };
@@ -747,13 +801,13 @@ PlaneMinigameRuntime.prototype.getGameOverButtons = function () {
     };
   }
 
-  return {
-    primary: {
-      x: restartButton.x,
-      y: restartY - (buttonHeight + 14 * this.scale),
-      width: buttonWidth,
-      height: buttonHeight
-    },
+    return {
+      primary: {
+        x: restartButton.x,
+        y: restartY - (buttonHeight + buttonGap),
+        width: buttonWidth,
+        height: buttonHeight
+      },
     secondary: restartButton,
     tertiary: leaderboardButton
   };
@@ -1478,6 +1532,10 @@ PlaneMinigameRuntime.prototype.getShakeOffset = function () {
 };
 
 PlaneMinigameRuntime.prototype.startGame = function () {
+  if (this.state === 'over') {
+    this.finalizePendingRunRecord();
+  }
+
   if (!this.assets.enemy || !this.assets.bullet) {
     return;
   }
@@ -1523,6 +1581,7 @@ PlaneMinigameRuntime.prototype.startGame = function () {
   this.reviveCount = 0;
   this.revivePending = false;
   this.reviveHideDetectedAt = 0;
+  this.pendingRunRecord = false;
   this.lastTimestamp = 0;
   this.pauseButtonRect = this.createPauseButtonRect();
   this.bombButtonRect = this.createBombButtonRect();
@@ -1614,6 +1673,7 @@ PlaneMinigameRuntime.prototype.reviveAfterShare = function () {
   this.reviveCount += 1;
   this.revivePending = false;
   this.reviveHideDetectedAt = 0;
+  this.pendingRunRecord = false;
   this.state = 'running';
   this.level = 1 + Math.floor(this.score / 500);
   this.currentRunRank = null;
@@ -2138,12 +2198,26 @@ PlaneMinigameRuntime.prototype.endGame = function () {
   this.state = 'over';
   this.paused = false;
   this.manualPause = false;
+  this.pendingRunRecord = true;
+
+  if (!this.canReviveByShare()) {
+    this.finalizePendingRunRecord();
+  }
+
+  this.emitUiChange();
+  this.triggerVibration('medium');
+};
+
+PlaneMinigameRuntime.prototype.finalizePendingRunRecord = function () {
+  if (!this.pendingRunRecord) {
+    return;
+  }
+
+  this.pendingRunRecord = false;
   this.bestScore = Math.max(this.bestScore, this.score);
   this.recordLeaderboardEntry();
   utils.safeSetStorage(STORAGE_KEY, this.bestScore);
   this.syncCloudLeaderboard();
-  this.emitUiChange();
-  this.triggerVibration('medium');
 };
 
 PlaneMinigameRuntime.prototype.render = function () {
@@ -2676,20 +2750,32 @@ PlaneMinigameRuntime.prototype.renderCover = function (ctx) {
 
   ctx.save();
   ctx.textAlign = 'center';
-  ctx.fillStyle = INK;
-  setUiFont(ctx, layout.titleFontSize, 'bold');
-  ctx.fillText(gameMeta.GAME_TITLE, this.width / 2, layout.titleY);
+  drawCoverDisplayText(ctx, gameMeta.GAME_TITLE, this.width / 2, layout.titleY, {
+    size: layout.titleFontSize,
+    fillStyle: INK,
+    strokeStyle: 'rgba(241, 237, 230, 0.82)',
+    lineWidth: 1.4,
+    weight: null,
+    shadowColor: 'rgba(58, 49, 40, 0.16)',
+    shadowOffsetY: 1.6
+  });
 
-  ctx.fillStyle = SOFT_INK;
-  setUiFont(ctx, layout.sloganFontSize, 'bold');
-  ctx.fillText(gameMeta.GAME_SLOGAN, this.width / 2, layout.sloganY);
+  drawCoverDisplayText(ctx, gameMeta.GAME_SLOGAN, this.width / 2, layout.sloganY, {
+    size: layout.sloganFontSize,
+    fillStyle: '#7f6a53',
+    strokeStyle: 'rgba(244, 239, 229, 0.72)',
+    lineWidth: 0.8,
+    weight: null,
+    shadowColor: 'rgba(58, 49, 40, 0.08)',
+    shadowOffsetY: 1
+  });
 
   drawPaperPanel(ctx, layout.panelX, layout.panelY, layout.panelWidth, layout.panelHeight, 22, 'rgba(247, 243, 236, 0.88)');
 
   drawCoverPlaneIcon(ctx, layout.previewX, layout.previewY, layout.previewWidth, layout.previewHeight);
 
   ctx.fillStyle = SOFT_INK;
-  setUiFont(ctx, layout.descFontSize, null);
+  setCoverFont(ctx, layout.descFontSize, null);
   for (var lineIndex = 0; lineIndex < gameMeta.COVER_DESCRIPTION_LINES.length; lineIndex += 1) {
     ctx.fillText(
       gameMeta.COVER_DESCRIPTION_LINES[lineIndex],
@@ -2698,11 +2784,24 @@ PlaneMinigameRuntime.prototype.renderCover = function (ctx) {
     );
   }
 
-  ctx.fillStyle = '#8b6b3f';
-  setUiFont(ctx, 13 * this.scale, 'bold');
-  ctx.fillText('作者 ' + gameMeta.GAME_AUTHOR, this.width / 2, layout.authorY);
+  drawCoverDisplayText(ctx, '作者 ' + gameMeta.GAME_AUTHOR, layout.authorX, layout.authorY, {
+    size: 11.5 * this.scale,
+    fillStyle: '#8b6b3f',
+    strokeStyle: 'rgba(247, 243, 236, 0.68)',
+    lineWidth: 0.7,
+    weight: null,
+    textAlign: 'right',
+    shadowColor: 'rgba(58, 49, 40, 0.06)',
+    shadowOffsetY: 0.8
+  });
 
-  drawPencilButton(ctx, this.buttonRect, '开始游戏', { primary: true });
+  drawPencilButton(ctx, this.buttonRect, '开始游戏', {
+    primary: true,
+    displayStyle: 'cover',
+    fontSize: 18.5 * this.scale,
+    fontWeight: null,
+    textColor: '#5f4b38'
+  });
   ctx.restore();
 };
 
@@ -2743,25 +2842,31 @@ PlaneMinigameRuntime.prototype.renderGameOver = function (ctx) {
   ctx.fillRect(0, 0, this.width, this.height);
 
   var panelWidth = Math.min(this.width - 40 * this.scale, 320);
-  var panelHeight = 220 * this.scale;
+  var panelHeight = 192 * this.scale;
   var panelX = (this.width - panelWidth) / 2;
-  var panelY = this.height * 0.2;
+  var panelY = this.height * 0.24;
 
   drawPaperPanel(ctx, panelX, panelY, panelWidth, panelHeight, 22, PANEL_FILL_ALT);
 
   ctx.textAlign = 'center';
   ctx.fillStyle = INK;
-  setUiFont(ctx, 30 * this.scale, 'bold');
-  ctx.fillText('挑战结束', this.width / 2, panelY + 44 * this.scale);
-  drawPanelUnderline(ctx, panelX + 34 * this.scale, panelY + 58 * this.scale, panelWidth - 68 * this.scale, 0.28);
+  drawCoverDisplayText(ctx, '挑战结束', this.width / 2, panelY + 36 * this.scale, {
+    size: 28 * this.scale,
+    fillStyle: INK,
+    strokeStyle: 'rgba(246, 241, 232, 0.7)',
+    lineWidth: 0.9,
+    weight: null,
+    shadowColor: 'rgba(58, 49, 40, 0.08)',
+    shadowOffsetY: 1
+  });
 
   ctx.fillStyle = SOFT_INK;
-  setUiFont(ctx, 16 * this.scale, null);
-  ctx.fillText('本局得分 ' + this.score, this.width / 2, panelY + 92 * this.scale);
-  ctx.fillText('最高分 ' + this.bestScore, this.width / 2, panelY + 122 * this.scale);
-  ctx.fillText('生存时间 ' + this.survivalTime.toFixed(1) + ' 秒', this.width / 2, panelY + 152 * this.scale);
+  setUiFont(ctx, 14 * this.scale, null);
+  ctx.fillText('本局得分 ' + this.score, this.width / 2, panelY + 78 * this.scale);
+  ctx.fillText('最高分 ' + this.bestScore, this.width / 2, panelY + 106 * this.scale);
+  ctx.fillText('生存时间 ' + this.survivalTime.toFixed(1) + ' 秒', this.width / 2, panelY + 134 * this.scale);
   if (this.currentRunRank) {
-    ctx.fillText('本机排行 第 ' + this.currentRunRank + ' 名', this.width / 2, panelY + 182 * this.scale);
+    ctx.fillText('本机排行 第 ' + this.currentRunRank + ' 名', this.width / 2, panelY + 162 * this.scale);
   }
 
   if (buttons.primary) {

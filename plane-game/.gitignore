@@ -1,5 +1,8 @@
 # Local WeChat DevTools config
 project.private.config.json
+fonts/homepage-font-text.txt
+fonts/ui-font-text.txt
+fonts/ma-shan-zheng.ttf
 
 # macOS
 .DS_Store

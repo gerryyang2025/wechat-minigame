@@ -1,5 +1,6 @@
 'use strict';
 
+var fontUtils = require('./font');
 var INK = '#342d28';
 var SOFT_INK = '#6a6056';
 var LIGHT_INK = '#9b8f84';
@@ -56,6 +57,10 @@ function trySetCanvasDimension(targetCanvas, key, value) {
     return false;
   }
 
+  if (typeof sharedCanvas !== 'undefined' && targetCanvas === sharedCanvas) {
+    return false;
+  }
+
   try {
     targetCanvas[key] = value;
     return true;
@@ -65,7 +70,7 @@ function trySetCanvasDimension(targetCanvas, key, value) {
 }
 
 function setFont(size, weight) {
-  ctx.font = (weight ? weight + ' ' : '') + Math.round(size) + 'px serif';
+  fontUtils.applyCanvasFont(ctx, size, weight);
 }
 
 function now() {

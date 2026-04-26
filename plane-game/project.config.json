@@ -76,6 +76,18 @@
       {
         "value": "audio/bgm2.mp3",
         "type": "file"
+      },
+      {
+        "value": "fonts/homepage-font-text.txt",
+        "type": "file"
+      },
+      {
+        "value": "fonts/ui-font-text.txt",
+        "type": "file"
+      },
+      {
+        "value": "fonts/ma-shan-zheng.ttf",
+        "type": "file"
       }
     ],
     "include": []
@@ -90,7 +102,10 @@
       "project.private.config.example.json",
       "images/Generated Image*.png",
       "images/enemy1.jpg",
-      "audio/bgm2.mp3"
+      "audio/bgm2.mp3",
+      "fonts/homepage-font-text.txt",
+      "fonts/ui-font-text.txt",
+      "fonts/ma-shan-zheng.ttf"
     ]
   },
   "editorSetting": {

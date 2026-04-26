@@ -1,6 +1,7 @@
 'use strict';
 
 var utils = require('./utils');
+var fontUtils = require('./font');
 var powerUpStyles = require('./powerup-style');
 var PLAYER_MAX_HP = 3;
 var PLAYER_INVINCIBLE_DURATION = 1.6;
@@ -313,7 +314,7 @@ function drawParachuteSupply(ctx, width, height, type, sway) {
 
   if (showLabel) {
     ctx.fillStyle = style.ink || INK;
-    ctx.font = 'bold ' + labelFontSize + 'px serif';
+    ctx.font = fontUtils.buildCanvasFont(labelFontSize, 'bold');
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(label, width * 0.5, packageY + packageHeight * 0.74);
@@ -492,7 +493,7 @@ function drawSupplyIcon(ctx, x, y, width, height, style, showLabel) {
     }, accent, null, 0, 0);
   } else if (style.icon === 'score') {
     ctx.fillStyle = iconColor;
-    ctx.font = 'bold ' + Math.round(scaledWidth * 0.17) + 'px serif';
+    ctx.font = fontUtils.buildCanvasFont(Math.round(scaledWidth * 0.17), 'bold');
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('x2', centerX, centerY);
@@ -503,7 +504,7 @@ function drawSupplyIcon(ctx, x, y, width, height, style, showLabel) {
     });
   } else {
     ctx.fillStyle = iconColor;
-    ctx.font = 'bold ' + Math.round(scaledWidth * 0.16) + 'px serif';
+    ctx.font = fontUtils.buildCanvasFont(Math.round(scaledWidth * 0.16), 'bold');
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(style.label || '补', centerX, centerY);

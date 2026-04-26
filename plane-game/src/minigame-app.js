@@ -3,6 +3,7 @@
 var utils = require('./utils');
 var settingsStore = require('./settings');
 var gameMeta = require('./game-meta');
+var fontUtils = require('./font');
 var PlaneMinigameRuntime = require('./minigame-runtime');
 
 function collectRuntimeInfo() {
@@ -63,6 +64,8 @@ function PlaneMinigameApp() {
 }
 
 PlaneMinigameApp.prototype.init = function () {
+  fontUtils.ensureLoaded();
+
   if (wx.setKeepScreenOn) {
     try {
       wx.setKeepScreenOn({
