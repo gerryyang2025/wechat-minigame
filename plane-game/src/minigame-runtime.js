@@ -146,6 +146,25 @@ function drawPencilButton(ctx, rect, label, options) {
   ctx.restore();
 }
 
+function drawSummaryCard(ctx, rect, label, value) {
+  var labelSize = Math.max(10, rect.height * 0.2);
+  var valueSize = Math.max(15, rect.height * 0.32);
+
+  drawPaperPanel(ctx, rect.x, rect.y, rect.width, rect.height, 18, 'rgba(247, 243, 236, 0.94)');
+
+  ctx.save();
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  ctx.fillStyle = SOFT_INK;
+  setUiFont(ctx, labelSize, null);
+  ctx.fillText(label, rect.x + 12, rect.y + 10);
+
+  ctx.fillStyle = INK;
+  setUiFont(ctx, valueSize, null);
+  ctx.fillText(value, rect.x + 12, rect.y + 30);
+  ctx.restore();
+}
+
 function drawHudBadgeIcon(ctx, x, y, size, style) {
   var iconColor = style.ink || INK;
   var accent = style.accent || SOFT_INK;
@@ -772,44 +791,56 @@ PlaneMinigameRuntime.prototype.getPauseOverlayButtons = function () {
   };
 };
 
-PlaneMinigameRuntime.prototype.getGameOverButtons = function () {
-  var buttonWidth = Math.min(this.width * 0.58, 226);
-  var buttonHeight = Math.max(46, 48 * this.scale);
-  var leaderboardHeight = Math.max(42, 44 * this.scale);
-  var restartY = this.canReviveByShare()
-    ? this.height * 0.655
-    : this.height * 0.695;
-  var buttonGap = 12 * this.scale;
+PlaneMinigameRuntime.prototype.getGameOverButtons = function (panelY, panelHeight) {
+  if (panelY === undefined || panelHeight === undefined) {
+    panelHeight = 220 * this.scale;
+    panelY = this.height * 0.23;
+  }
+
+  var buttonWidth = Math.min(this.width * 0.56, 220);
+  var buttonHeight = Math.max(42, 44 * this.scale);
+  var buttonGap = 10 * this.scale;
+  var startY = panelY + panelHeight + 18 * this.scale;
+  var startX = (this.width - buttonWidth) / 2;
   var restartButton = {
-    x: (this.width - buttonWidth) / 2,
-    y: restartY,
+    x: startX,
+    y: startY,
     width: buttonWidth,
     height: buttonHeight
-  };
-  var leaderboardButton = {
-    x: restartButton.x,
-    y: restartY + buttonHeight + buttonGap,
-    width: buttonWidth,
-    height: leaderboardHeight
   };
 
   if (!this.canReviveByShare()) {
     return {
       primary: restartButton,
-      secondary: null,
-      tertiary: leaderboardButton
-    };
-  }
-
-    return {
-      primary: {
-        x: restartButton.x,
-        y: restartY - (buttonHeight + buttonGap),
+      secondary: {
+        x: startX,
+        y: startY + buttonHeight + buttonGap,
         width: buttonWidth,
         height: buttonHeight
       },
-    secondary: restartButton,
-    tertiary: leaderboardButton
+      tertiary: null
+    };
+  }
+
+  return {
+    primary: {
+      x: startX,
+      y: startY,
+      width: buttonWidth,
+      height: buttonHeight
+    },
+    secondary: {
+      x: startX,
+      y: startY + buttonHeight + buttonGap,
+      width: buttonWidth,
+      height: buttonHeight
+    },
+    tertiary: {
+      x: startX,
+      y: startY + (buttonHeight + buttonGap) * 2,
+      width: buttonWidth,
+      height: buttonHeight
+    }
   };
 };
 
@@ -1767,15 +1798,24 @@ PlaneMinigameRuntime.prototype.handleTouchStart = function (event) {
       return;
     }
 
-    if (
-      (gameOverButtons.secondary && utils.pointInRect(touch.x, touch.y, gameOverButtons.secondary)) ||
-      (!gameOverButtons.secondary && gameOverButtons.primary && utils.pointInRect(touch.x, touch.y, gameOverButtons.primary))
-    ) {
+    if (this.canReviveByShare()) {
+      if (gameOverButtons.secondary && utils.pointInRect(touch.x, touch.y, gameOverButtons.secondary)) {
+        this.startGame();
+        return;
+      }
+
+      if (gameOverButtons.tertiary && utils.pointInRect(touch.x, touch.y, gameOverButtons.tertiary)) {
+        this.openLeaderboard('local');
+      }
+      return;
+    }
+
+    if (gameOverButtons.primary && utils.pointInRect(touch.x, touch.y, gameOverButtons.primary)) {
       this.startGame();
       return;
     }
 
-    if (gameOverButtons.tertiary && utils.pointInRect(touch.x, touch.y, gameOverButtons.tertiary)) {
+    if (gameOverButtons.secondary && utils.pointInRect(touch.x, touch.y, gameOverButtons.secondary)) {
       this.openLeaderboard('local');
     }
     return;
@@ -2835,21 +2875,37 @@ PlaneMinigameRuntime.prototype.renderPausedOverlay = function (ctx) {
 };
 
 PlaneMinigameRuntime.prototype.renderGameOver = function (ctx) {
-  var buttons = this.getGameOverButtons();
-
   ctx.save();
   ctx.fillStyle = 'rgba(239, 232, 223, 0.76)';
   ctx.fillRect(0, 0, this.width, this.height);
 
-  var panelWidth = Math.min(this.width - 40 * this.scale, 320);
-  var panelHeight = 192 * this.scale;
+  var panelWidth = Math.min(this.width - 44 * this.scale, 318 * this.scale);
+  var panelHeight = 220 * this.scale;
   var panelX = (this.width - panelWidth) / 2;
-  var panelY = this.height * 0.24;
+  var panelY = this.height * 0.23;
+  var buttons = this.getGameOverButtons(panelY, panelHeight);
+  var pillWidth = 92 * this.scale;
+  var pillHeight = 28 * this.scale;
+  var pillX = this.width / 2 - pillWidth / 2;
+  var pillY = panelY + 12 * this.scale;
+  var cardInsetX = 18 * this.scale;
+  var cardGap = 10 * this.scale;
+  var cardWidth = (panelWidth - cardInsetX * 2 - cardGap) / 2;
+  var cardHeight = 52 * this.scale;
+  var firstRowY = panelY + 104 * this.scale;
+  var secondRowY = firstRowY + cardHeight + 10 * this.scale;
+  var leftCardX = panelX + cardInsetX;
+  var rightCardX = leftCardX + cardWidth + cardGap;
+  var currentRankText = this.currentRunRank ? ('第 ' + this.currentRunRank + ' 名') : '未上榜';
 
   drawPaperPanel(ctx, panelX, panelY, panelWidth, panelHeight, 22, PANEL_FILL_ALT);
+  drawPaperPanel(ctx, pillX, pillY, pillWidth, pillHeight, 16, 'rgba(247, 243, 236, 0.96)');
 
   ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
   ctx.fillStyle = INK;
+  setUiFont(ctx, 12 * this.scale, null);
+  ctx.fillText('战绩结算', this.width / 2, pillY + pillHeight / 2 + 1);
   drawCoverDisplayText(ctx, '挑战结束', this.width / 2, panelY + 36 * this.scale, {
     size: 28 * this.scale,
     fillStyle: INK,
@@ -2861,13 +2917,33 @@ PlaneMinigameRuntime.prototype.renderGameOver = function (ctx) {
   });
 
   ctx.fillStyle = SOFT_INK;
-  setUiFont(ctx, 14 * this.scale, null);
-  ctx.fillText('本局得分 ' + this.score, this.width / 2, panelY + 78 * this.scale);
-  ctx.fillText('最高分 ' + this.bestScore, this.width / 2, panelY + 106 * this.scale);
-  ctx.fillText('生存时间 ' + this.survivalTime.toFixed(1) + ' 秒', this.width / 2, panelY + 134 * this.scale);
-  if (this.currentRunRank) {
-    ctx.fillText('本机排行 第 ' + this.currentRunRank + ' 名', this.width / 2, panelY + 162 * this.scale);
-  }
+  setUiFont(ctx, 13.5 * this.scale, null);
+  ctx.fillText('第 ' + this.level + ' 关  ·  生存 ' + this.survivalTime.toFixed(1) + ' 秒', this.width / 2, panelY + 64 * this.scale);
+
+  drawSummaryCard(ctx, {
+    x: leftCardX,
+    y: firstRowY,
+    width: cardWidth,
+    height: cardHeight
+  }, '本局得分', String(this.score));
+  drawSummaryCard(ctx, {
+    x: rightCardX,
+    y: firstRowY,
+    width: cardWidth,
+    height: cardHeight
+  }, '最高分', String(this.bestScore));
+  drawSummaryCard(ctx, {
+    x: leftCardX,
+    y: secondRowY,
+    width: cardWidth,
+    height: cardHeight
+  }, '生存时间', this.survivalTime.toFixed(1) + ' 秒');
+  drawSummaryCard(ctx, {
+    x: rightCardX,
+    y: secondRowY,
+    width: cardWidth,
+    height: cardHeight
+  }, '本机排行', currentRankText);
 
   if (buttons.primary) {
     drawPencilButton(ctx, buttons.primary,
@@ -2876,20 +2952,29 @@ PlaneMinigameRuntime.prototype.renderGameOver = function (ctx) {
         : '再来一局',
       {
         primary: true,
+        displayStyle: 'cover',
+        fontSize: 17 * this.scale,
         fillStyle: this.canReviveByShare() ? PANEL_FILL_ALT : PANEL_FILL
       }
     );
   }
 
   if (buttons.secondary) {
-    drawPencilButton(ctx, buttons.secondary, '再来一局');
+    drawPencilButton(ctx, buttons.secondary, this.canReviveByShare() ? '再来一局' : '战绩排行', {
+      displayStyle: 'cover',
+      fontSize: 16.5 * this.scale
+    });
   }
 
   if (buttons.tertiary) {
     this.leaderboardButtonRect = buttons.tertiary;
     drawPencilButton(ctx, buttons.tertiary, '战绩排行', {
+      displayStyle: 'cover',
+      fontSize: 16.5 * this.scale,
       fillStyle: 'rgba(244, 237, 227, 0.92)'
     });
+  } else {
+    this.leaderboardButtonRect = buttons.secondary;
   }
   ctx.restore();
 };
