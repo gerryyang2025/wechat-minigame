@@ -177,6 +177,28 @@ function drawPencilButton(ctx, rect, label, options) {
   ctx.restore();
 }
 
+function drawDisplayText(ctx, text, x, y, options) {
+  var settings = options || {};
+  var fontSetter = settings.useFallbackFont ? setFallbackUiFont : setUiFont;
+  var size = settings.size || 24;
+
+  ctx.save();
+  ctx.textAlign = settings.textAlign || 'center';
+  ctx.textBaseline = settings.textBaseline || 'middle';
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  ctx.fillStyle = settings.fillStyle || INK;
+  ctx.strokeStyle = settings.strokeStyle || 'rgba(248, 244, 236, 0.88)';
+  ctx.lineWidth = settings.lineWidth || Math.max(1.2, size * 0.08);
+  ctx.shadowColor = settings.shadowColor || 'rgba(56, 46, 38, 0.14)';
+  ctx.shadowBlur = settings.shadowBlur || 0;
+  ctx.shadowOffsetY = settings.shadowOffsetY || Math.max(1, size * 0.05);
+  fontSetter(ctx, size, settings.weight || null);
+  ctx.strokeText(text, x, y);
+  ctx.fillText(text, x, y);
+  ctx.restore();
+}
+
 function drawStatChip(ctx, x, y, width, height, label, value, options) {
   var settings = options || {};
   var scale = settings.scale || 1;
@@ -547,6 +569,7 @@ function PlaneMinigameRuntime(options) {
   this.reviveCount = 0;
   this.revivePending = false;
   this.reviveHideDetectedAt = 0;
+  this.pendingRunRecord = false;
   this.destroyed = false;
   this.raf = utils.getRequestAnimationFrame();
   this.lastTimestamp = 0;
@@ -740,26 +763,26 @@ PlaneMinigameRuntime.prototype.createPrimaryButtonRect = function () {
 };
 
 PlaneMinigameRuntime.prototype.getCoverLayout = function () {
-  var buttonWidth = Math.min(this.width * 0.62, 240);
-  var buttonHeight = Math.max(54, 56 * this.scale);
+  var buttonWidth = Math.min(this.width * 0.6, 232);
+  var buttonHeight = Math.max(50, 52 * this.scale);
   var contentWidth = Math.min(this.width - 36 * this.scale, 320 * this.scale);
-  var titleY = Math.max(this.safeTopInset + 34 * this.scale, this.height * 0.16);
+  var titleY = Math.max(this.safeTopInset + 38 * this.scale, this.height * 0.15);
   var titleFontSize = Math.max(28, Math.round(34 * this.scale));
-  var sloganY = titleY + 28 * this.scale;
+  var sloganY = titleY + 34 * this.scale;
   var sloganFontSize = Math.max(14, Math.round(16 * this.scale));
-  var buttonY = this.height - this.safeBottomInset - buttonHeight - 28 * this.scale;
-  var panelY = sloganY + 20 * this.scale;
-  var panelHeight = Math.max(226 * this.scale, buttonY - panelY - 34 * this.scale);
-  var previewHeight = Math.max(74 * this.scale, Math.min(94 * this.scale, panelHeight * 0.28));
+  var buttonY = this.height - this.safeBottomInset - buttonHeight - 34 * this.scale;
+  var panelY = sloganY + 30 * this.scale;
+  var panelHeight = Math.max(212 * this.scale, buttonY - panelY - 54 * this.scale);
+  var previewHeight = Math.max(74 * this.scale, Math.min(96 * this.scale, panelHeight * 0.25));
   var previewWidth = previewHeight * (96 / 112);
-  var previewY = panelY + 18 * this.scale;
+  var previewY = panelY + 24 * this.scale;
   var descFontSize = Math.max(12, Math.round(13 * this.scale));
-  var descStartY = previewY + previewHeight + 30 * this.scale;
-  var authorY = panelY + panelHeight - 22 * this.scale;
-  var descAvailableHeight = Math.max(92 * this.scale, authorY - descStartY - 18 * this.scale);
+  var descStartY = previewY + previewHeight + 34 * this.scale;
+  var authorY = panelY + panelHeight - 24 * this.scale;
+  var descAvailableHeight = Math.max(90 * this.scale, authorY - descStartY - 22 * this.scale);
   var descLineHeight = Math.max(
-    19 * this.scale,
-    Math.min(24 * this.scale, descAvailableHeight / Math.max(1, gameMeta.COVER_DESCRIPTION_LINES.length))
+    22 * this.scale,
+    Math.min(28 * this.scale, descAvailableHeight / Math.max(1, gameMeta.COVER_DESCRIPTION_LINES.length))
   );
 
   return {
@@ -778,6 +801,7 @@ PlaneMinigameRuntime.prototype.getCoverLayout = function () {
     previewY: previewY,
     previewWidth: previewWidth,
     previewHeight: previewHeight,
+    authorX: (this.width + contentWidth) / 2 - 18 * this.scale,
     authorY: authorY,
     buttonRect: {
       x: (this.width - buttonWidth) / 2,
@@ -865,12 +889,12 @@ PlaneMinigameRuntime.prototype.createLeaderboardTabRects = function (panelX, pan
 
 PlaneMinigameRuntime.prototype.getPauseOverlayButtons = function () {
   var panelWidth = Math.min(this.width - 40 * this.scale, 320);
-  var panelHeight = Math.min(this.height * 0.58, 336 * this.scale);
+  var panelHeight = Math.min(this.height * 0.52, 308 * this.scale);
   var panelX = (this.width - panelWidth) / 2;
-  var panelY = this.height * 0.18;
-  var buttonWidth = Math.min(panelWidth - 56 * this.scale, 220 * this.scale);
-  var buttonHeight = Math.max(44, 46 * this.scale);
-  var primaryY = panelY + panelHeight - 108 * this.scale;
+  var panelY = this.height * 0.205;
+  var buttonWidth = Math.min(panelWidth - 64 * this.scale, 212 * this.scale);
+  var buttonHeight = Math.max(38, 40 * this.scale);
+  var primaryY = panelY + panelHeight - 90 * this.scale;
 
   return {
     primary: {
@@ -890,13 +914,13 @@ PlaneMinigameRuntime.prototype.getPauseOverlayButtons = function () {
 
 PlaneMinigameRuntime.prototype.getGameOverButtons = function () {
   var panelWidth = Math.min(this.width - 40 * this.scale, 320);
-  var panelHeight = 272 * this.scale;
+  var panelHeight = 242 * this.scale;
   var panelX = (this.width - panelWidth) / 2;
-  var panelY = this.height * 0.16;
-  var actionTop = panelY + panelHeight + 18 * this.scale;
-  var buttonWidth = Math.min(panelWidth - 40 * this.scale, 220 * this.scale);
-  var buttonHeight = Math.max(38, 40 * this.scale);
-  var gap = 12 * this.scale;
+  var panelY = this.height * 0.19;
+  var actionTop = panelY + panelHeight + 8 * this.scale;
+  var buttonWidth = Math.min(panelWidth - 48 * this.scale, 212 * this.scale);
+  var buttonHeight = Math.max(36, 38 * this.scale);
+  var gap = 9 * this.scale;
   var primaryButton = {
     x: panelX + (panelWidth - buttonWidth) / 2,
     y: actionTop,
@@ -1570,6 +1594,10 @@ PlaneMinigameRuntime.prototype.getShakeOffset = function () {
 };
 
 PlaneMinigameRuntime.prototype.startGame = function () {
+  if (this.state === 'over') {
+    this.finalizePendingRunRecord();
+  }
+
   if (!this.assets.player || !this.assets.enemies.small || !this.assets.bullets.player) {
     return;
   }
@@ -1612,6 +1640,7 @@ PlaneMinigameRuntime.prototype.startGame = function () {
   this.reviveCount = 0;
   this.revivePending = false;
   this.reviveHideDetectedAt = 0;
+  this.pendingRunRecord = false;
   this.lastTimestamp = 0;
   this.pauseButtonRect = this.createPauseButtonRect();
   this.bombButtonRect = this.createBombButtonRect();
@@ -1703,6 +1732,7 @@ PlaneMinigameRuntime.prototype.reviveAfterShare = function () {
   this.reviveCount += 1;
   this.revivePending = false;
   this.reviveHideDetectedAt = 0;
+  this.pendingRunRecord = false;
   this.state = 'running';
   this.level = 1 + Math.floor(this.score / 500);
   this.currentRunRank = null;
@@ -1801,7 +1831,7 @@ PlaneMinigameRuntime.prototype.handleTouchStart = function (event) {
     }
 
     if (gameOverButtons.tertiary && utils.pointInRect(touch.x, touch.y, gameOverButtons.tertiary)) {
-      this.openLeaderboard(this.friendRankSupported ? 'friends' : 'local');
+      this.openLeaderboard('local');
     }
     return;
   }
@@ -2227,12 +2257,26 @@ PlaneMinigameRuntime.prototype.endGame = function () {
   this.state = 'over';
   this.paused = false;
   this.manualPause = false;
+  this.pendingRunRecord = true;
+
+  if (!this.canReviveByShare()) {
+    this.finalizePendingRunRecord();
+  }
+
+  this.emitUiChange();
+  this.triggerVibration('medium');
+};
+
+PlaneMinigameRuntime.prototype.finalizePendingRunRecord = function () {
+  if (!this.pendingRunRecord) {
+    return;
+  }
+
+  this.pendingRunRecord = false;
   this.bestScore = Math.max(this.bestScore, this.score);
   this.recordLeaderboardEntry();
   utils.safeSetStorage(STORAGE_KEY, this.bestScore);
   this.syncCloudLeaderboard();
-  this.emitUiChange();
-  this.triggerVibration('medium');
 };
 
 PlaneMinigameRuntime.prototype.render = function () {
@@ -2719,12 +2763,14 @@ PlaneMinigameRuntime.prototype.renderCover = function (ctx) {
   }
 
   ctx.fillStyle = '#8b6b3f';
-  setUiFont(ctx, 13 * this.scale, 'bold');
-  ctx.fillText('作者 ' + gameMeta.GAME_AUTHOR, this.width / 2, layout.authorY);
+  ctx.textAlign = 'right';
+  setUiFont(ctx, 11.5 * this.scale, null);
+  ctx.fillText('作者 ' + gameMeta.GAME_AUTHOR, layout.authorX, layout.authorY);
+  ctx.textAlign = 'center';
 
   drawPencilButton(ctx, this.buttonRect, '开始游戏', {
     primary: true,
-    fontSize: 24 * this.scale
+    fontSize: 20 * this.scale
   });
   ctx.restore();
 };
@@ -2732,17 +2778,14 @@ PlaneMinigameRuntime.prototype.renderCover = function (ctx) {
 PlaneMinigameRuntime.prototype.renderPausedOverlay = function (ctx) {
   var buttons = this.getPauseOverlayButtons();
   var panelWidth = Math.min(this.width - 40 * this.scale, 320);
-  var panelHeight = Math.min(this.height * 0.58, 336 * this.scale);
+  var panelHeight = Math.min(this.height * 0.52, 308 * this.scale);
   var panelX = (this.width - panelWidth) / 2;
-  var panelY = this.height * 0.18;
+  var panelY = this.height * 0.205;
   var statWidth = (panelWidth - 52 * this.scale) / 2;
-  var statHeight = 54 * this.scale;
-  var statTop = panelY + 96 * this.scale;
-  var headerTagWidth = 92 * this.scale;
-  var headerTagHeight = 24 * this.scale;
-  var headerTagX = this.width / 2 - headerTagWidth / 2;
-  var headerTagY = panelY + 16 * this.scale;
-  var summaryText = '第 ' + this.level + ' 关  ·  返回后继续作战';
+  var wideStatWidth = panelWidth - 36 * this.scale;
+  var statHeight = 48 * this.scale;
+  var statTop = panelY + 86 * this.scale;
+  var summaryText = '第 ' + this.level + ' 关';
 
   ctx.save();
   ctx.fillStyle = 'rgba(242, 236, 227, 0.72)';
@@ -2750,26 +2793,18 @@ PlaneMinigameRuntime.prototype.renderPausedOverlay = function (ctx) {
   drawPaperPanel(ctx, panelX, panelY, panelWidth, panelHeight, 22, PANEL_FILL);
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  drawPaperPanel(
-    ctx,
-    headerTagX,
-    headerTagY,
-    headerTagWidth,
-    headerTagHeight,
-    999,
-    'rgba(244, 236, 226, 0.92)'
-  );
-  ctx.fillStyle = SOFT_INK;
-  setUiFont(ctx, 11 * this.scale, 'bold');
-  ctx.fillText('暂停面板', this.width / 2, headerTagY + headerTagHeight / 2 + 1 * this.scale);
-
-  ctx.fillStyle = INK;
-  setUiFont(ctx, 30 * this.scale, 'bold');
-  ctx.fillText('游戏暂停', this.width / 2, panelY + 58 * this.scale);
+  drawDisplayText(ctx, '游戏暂停', this.width / 2, panelY + 38 * this.scale, {
+    size: 27 * this.scale,
+    fillStyle: INK,
+    strokeStyle: 'rgba(248, 244, 236, 0.88)',
+    lineWidth: 1.05,
+    shadowColor: 'rgba(56, 46, 38, 0.1)',
+    shadowOffsetY: 1
+  });
 
   ctx.fillStyle = SOFT_INK;
   setUiFont(ctx, 12 * this.scale, null);
-  ctx.fillText(summaryText, this.width / 2, panelY + 82 * this.scale);
+  ctx.fillText(summaryText, this.width / 2, panelY + 62 * this.scale);
 
   drawStatChip(ctx, panelX + 18 * this.scale, statTop, statWidth, statHeight, '本局得分', this.score, {
     scale: this.scale
@@ -2781,19 +2816,7 @@ PlaneMinigameRuntime.prototype.renderPausedOverlay = function (ctx) {
     ctx,
     panelX + 18 * this.scale,
     statTop + statHeight + 12 * this.scale,
-    statWidth,
-    statHeight,
-    '当前关卡',
-    '第 ' + this.level + ' 关',
-    {
-      scale: this.scale
-    }
-  );
-  drawStatChip(
-    ctx,
-    panelX + 26 * this.scale + statWidth,
-    statTop + statHeight + 12 * this.scale,
-    statWidth,
+    wideStatWidth,
     statHeight,
     '生存时间',
     this.survivalTime.toFixed(1) + '秒',
@@ -2804,10 +2827,10 @@ PlaneMinigameRuntime.prototype.renderPausedOverlay = function (ctx) {
 
   drawPencilButton(ctx, buttons.primary, '继续游戏', {
     primary: true,
-    fontSize: 21 * this.scale
+    fontSize: 18 * this.scale
   });
   drawPencilButton(ctx, buttons.secondary, '重新开始', {
-    fontSize: 20 * this.scale
+    fontSize: 18 * this.scale
   });
   ctx.restore();
 };
@@ -2821,56 +2844,41 @@ PlaneMinigameRuntime.prototype.renderGameOver = function (ctx) {
   ctx.fillRect(0, 0, this.width, this.height);
 
   var panelWidth = Math.min(this.width - 40 * this.scale, 320);
-  var panelHeight = 272 * this.scale;
+  var panelHeight = 242 * this.scale;
   var panelX = (this.width - panelWidth) / 2;
-  var panelY = this.height * 0.16;
+  var panelY = this.height * 0.19;
   var statWidth = (panelWidth - 52 * this.scale) / 2;
-  var statHeight = 54 * this.scale;
-  var statTop = panelY + 104 * this.scale;
-  var headerTagWidth = 92 * this.scale;
-  var headerTagHeight = 24 * this.scale;
-  var headerTagX = this.width / 2 - headerTagWidth / 2;
-  var headerTagY = panelY + 16 * this.scale;
+  var statHeight = 52 * this.scale;
+  var statTop = panelY + 102 * this.scale;
 
   drawPaperPanel(ctx, panelX, panelY, panelWidth, panelHeight, 22, PANEL_FILL_ALT);
 
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  drawPaperPanel(
-    ctx,
-    headerTagX,
-    headerTagY,
-    headerTagWidth,
-    headerTagHeight,
-    999,
-    'rgba(244, 236, 226, 0.92)'
-  );
-  ctx.fillStyle = SOFT_INK;
-  setFallbackUiFont(ctx, 12 * this.scale, 'bold');
-  ctx.fillText('战绩结算', this.width / 2, headerTagY + headerTagHeight / 2 + 1 * this.scale);
-
-  ctx.fillStyle = INK;
-  setFallbackUiFont(ctx, 29 * this.scale, 'bold');
-  ctx.fillText('挑战结束', this.width / 2, panelY + 58 * this.scale);
+  drawDisplayText(ctx, '挑战结束', this.width / 2, panelY + 52 * this.scale, {
+    size: 27 * this.scale,
+    fillStyle: INK,
+    strokeStyle: 'rgba(248, 244, 236, 0.88)',
+    lineWidth: 1.1,
+    shadowColor: 'rgba(56, 46, 38, 0.1)',
+    shadowOffsetY: 1
+  });
 
   ctx.fillStyle = SOFT_INK;
-  setFallbackUiFont(ctx, 13 * this.scale, null);
-  ctx.fillText(summaryText, this.width / 2, panelY + 82 * this.scale);
+  setUiFont(ctx, 12.5 * this.scale, null);
+  ctx.fillText(summaryText, this.width / 2, panelY + 78 * this.scale);
 
   drawStatChip(ctx, panelX + 18 * this.scale, statTop, statWidth, statHeight, '本局得分', this.score, {
     scale: this.scale,
-    fillStyle: 'rgba(244, 237, 227, 0.92)',
-    useFallbackFont: true
+    fillStyle: 'rgba(244, 237, 227, 0.92)'
   });
   drawStatChip(ctx, panelX + 26 * this.scale + statWidth, statTop, statWidth, statHeight, '最高分', this.bestScore, {
     scale: this.scale,
-    fillStyle: 'rgba(244, 237, 227, 0.92)',
-    useFallbackFont: true
+    fillStyle: 'rgba(244, 237, 227, 0.92)'
   });
   drawStatChip(ctx, panelX + 18 * this.scale, statTop + statHeight + 10 * this.scale, statWidth, statHeight, '生存时间', this.survivalTime.toFixed(1) + '秒', {
     scale: this.scale,
-    fillStyle: 'rgba(244, 237, 227, 0.92)',
-    useFallbackFont: true
+    fillStyle: 'rgba(244, 237, 227, 0.92)'
   });
   drawStatChip(
     ctx,
@@ -2882,8 +2890,7 @@ PlaneMinigameRuntime.prototype.renderGameOver = function (ctx) {
     this.currentRunRank ? ('第 ' + this.currentRunRank + ' 名') : '未上榜',
     {
       scale: this.scale,
-      fillStyle: 'rgba(244, 237, 227, 0.92)',
-      useFallbackFont: true
+      fillStyle: 'rgba(244, 237, 227, 0.92)'
     }
   );
 
@@ -2895,25 +2902,22 @@ PlaneMinigameRuntime.prototype.renderGameOver = function (ctx) {
       {
         primary: true,
         fillStyle: this.canReviveByShare() ? PANEL_FILL_ALT : PANEL_FILL,
-        fontSize: 18 * this.scale,
-        useFallbackFont: true
+        fontSize: 16.5 * this.scale
       }
     );
   }
 
   if (buttons.secondary) {
     drawPencilButton(ctx, buttons.secondary, '再来一局', {
-      fontSize: 18 * this.scale,
-      useFallbackFont: true
+      fontSize: 16.5 * this.scale
     });
   }
 
   if (buttons.tertiary) {
     this.leaderboardButtonRect = buttons.tertiary;
-    drawPencilButton(ctx, buttons.tertiary, this.friendRankSupported ? '好友排行' : '战绩排行', {
+    drawPencilButton(ctx, buttons.tertiary, '战绩排行', {
       fillStyle: 'rgba(244, 237, 227, 0.92)',
-      fontSize: 18 * this.scale,
-      useFallbackFont: true
+      fontSize: 16.5 * this.scale
     });
   }
   ctx.restore();
@@ -2921,15 +2925,15 @@ PlaneMinigameRuntime.prototype.renderGameOver = function (ctx) {
 
 PlaneMinigameRuntime.prototype.renderLeaderboard = function (ctx) {
   var panelWidth = Math.min(this.width - 34 * this.scale, 336 * this.scale);
-  var panelHeight = Math.min(this.height * 0.58, 360 * this.scale);
+  var panelHeight = Math.min(this.height * 0.58, 352 * this.scale);
   var panelX = (this.width - panelWidth) / 2;
   var panelY = this.height * 0.18;
   var closeRect = this.createLeaderboardCloseRect(panelX, panelY, panelWidth);
   var tabRects = this.createLeaderboardTabRects(panelX, panelY, panelWidth);
   var contentX = panelX + 18 * this.scale;
-  var contentY = panelY + (tabRects ? 126 * this.scale : 84 * this.scale);
+  var contentY = panelY + (tabRects ? 116 * this.scale : 84 * this.scale);
   var contentWidth = panelWidth - 36 * this.scale;
-  var contentBottomY = panelY + panelHeight - 20 * this.scale;
+  var contentBottomY = panelY + panelHeight - 18 * this.scale;
   var contentHeight = Math.max(72 * this.scale, contentBottomY - contentY);
   var records = this.leaderboard.length ? this.leaderboard : [{
     score: 0,
@@ -2953,13 +2957,15 @@ PlaneMinigameRuntime.prototype.renderLeaderboard = function (ctx) {
   drawPaperPanel(ctx, panelX, panelY, panelWidth, panelHeight, 22, PANEL_FILL_ALT);
 
   ctx.textAlign = 'center';
-  ctx.fillStyle = INK;
-  setUiFont(ctx, 28 * this.scale, 'bold');
-  ctx.fillText(
-    this.leaderboardMode === 'friends' ? '好友排行' : '本机战绩排行',
-    this.width / 2,
-    panelY + 42 * this.scale
-  );
+  ctx.textBaseline = 'middle';
+  drawDisplayText(ctx, '战绩排行', this.width / 2, panelY + 42 * this.scale, {
+    size: 24 * this.scale,
+    fillStyle: INK,
+    strokeStyle: 'rgba(248, 244, 236, 0.88)',
+    lineWidth: 1,
+    shadowColor: 'rgba(56, 46, 38, 0.08)',
+    shadowOffsetY: 1
+  });
 
   drawPencilButton(ctx, closeRect, '×', {
     fontSize: 24 * this.scale
@@ -3076,15 +3082,26 @@ PlaneMinigameRuntime.prototype.renderLeaderboard = function (ctx) {
 };
 
 PlaneMinigameRuntime.prototype.renderError = function (ctx) {
+  var panelWidth = Math.min(this.width - 44 * this.scale, 300 * this.scale);
+  var panelHeight = 126 * this.scale;
+  var panelX = (this.width - panelWidth) / 2;
+  var panelY = this.height * 0.34;
+
   ctx.save();
   ctx.textAlign = 'center';
-  ctx.fillStyle = INK;
-  setUiFont(ctx, 28 * this.scale, 'bold');
-  ctx.fillText('加载失败', this.width / 2, this.height * 0.4);
-  drawPanelUnderline(ctx, this.width / 2 - 72 * this.scale, this.height * 0.425, 144 * this.scale, 0.28);
-  setUiFont(ctx, 15 * this.scale, null);
+  ctx.textBaseline = 'middle';
+  drawPaperPanel(ctx, panelX, panelY, panelWidth, panelHeight, 22, 'rgba(247, 243, 236, 0.92)');
+  drawDisplayText(ctx, '加载失败', this.width / 2, panelY + 34 * this.scale, {
+    size: 24 * this.scale,
+    fillStyle: INK,
+    strokeStyle: 'rgba(248, 244, 236, 0.88)',
+    lineWidth: 1,
+    shadowColor: 'rgba(56, 46, 38, 0.08)',
+    shadowOffsetY: 1
+  });
+  setUiFont(ctx, 13.5 * this.scale, null);
   ctx.fillStyle = SOFT_INK;
-  ctx.fillText(this.errorMessage || '请检查游戏资源路径和开发者工具项目类型。', this.width / 2, this.height * 0.48);
+  ctx.fillText(this.errorMessage || '请检查游戏资源路径和项目配置。', this.width / 2, panelY + 76 * this.scale);
   ctx.restore();
 };
 

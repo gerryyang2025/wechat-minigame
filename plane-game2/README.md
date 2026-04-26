@@ -14,7 +14,7 @@ This project is the sprite-driven variant in this repository. It uses a 2D arcad
 
 - full-screen canvas rendering through `wx.createCanvas()`
 - arcade background, title art, loading art, game-over art, and button art
-- shared `Marker Felt` canvas typography loaded from `fonts/marker-felt.ttf`, with a safe system-font fallback when custom font loading is unavailable
+- shared handwritten canvas typography loaded from `fonts/ma-shan-zheng-ui.ttf`, with a safe system-font fallback when custom font loading is unavailable
 - animated player sprite frames and sprite-based enemy rendering for small, medium, and large enemies
 - sprite-based explosion sequences for the player and all enemy tiers
 - drag movement with automatic shooting

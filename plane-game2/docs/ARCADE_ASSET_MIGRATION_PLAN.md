@@ -11,7 +11,7 @@ The goal is to turn `plane-game2` into a sprite-driven WeChat minigame variant w
 The current arcade direction includes:
 
 - sprite assets for player, enemies, bullets, explosions, buttons, title art, and backgrounds
-- a packaged UI font (`Marker Felt.ttf`)
+- a packaged handwritten UI font (`ma-shan-zheng-ui.ttf`)
 - packaged sound effects and background music
 - a simpler arcade ruleset centered on:
   - auto-fire
@@ -108,7 +108,7 @@ The following items are already implemented:
 - sprite-based explosion sequences for player and enemy destruction
 - packaged background, loading art, title art, game-over art, and button art
 - packaged BGM and sound effects mapped into the audio runtime
-- packaged `Marker Felt` font copied into the minigame package and used for shared canvas text rendering with fallback handling
+- packaged handwritten font copied into the minigame package and used for shared canvas text rendering with fallback handling
 - first-pass pickup mapping centered on:
   - `Double Shot`
   - `Firepower Upgrade`
@@ -131,7 +131,7 @@ Current assessment:
 
 - sprite-driven presentation for player, enemies, bullets, explosions, title art, background, game-over art, and button assets
 - arcade BGM and main sound-effect set
-- `Marker Felt` UI font applied to canvas-drawn text with fallback handling
+- handwritten UI font applied to canvas-drawn text with fallback handling
 - drag-to-move player control with automatic firing
 - three visible enemy classes
 - best-score persistence

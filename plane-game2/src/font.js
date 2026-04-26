@@ -1,6 +1,6 @@
 'use strict';
 
-var FONT_PATH = 'fonts/marker-felt.ttf';
+var FONT_PATH = 'fonts/ma-shan-zheng-ui.ttf';
 var DEFAULT_FONT_FAMILY = 'serif';
 var cachedFontFamily = null;
 var hasTriedLoading = false;

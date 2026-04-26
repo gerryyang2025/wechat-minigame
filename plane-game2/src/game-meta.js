@@ -8,8 +8,7 @@ var COVER_DESCRIPTION_LINES = [
   '经典街机风飞行射击小游戏。',
   '手指拖动战机，自动开火。',
   '闪避敌机与弹幕，击落更多目标。',
-  '拾取双枪补给和炸弹空投，',
-  '每局最多可分享复活3次。'
+  '拾取双枪补给与炸弹空投，每局可分享复活3次。'
 ];
 
 function buildShareTitle(snapshot) {

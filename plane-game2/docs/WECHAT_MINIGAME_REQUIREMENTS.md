@@ -78,7 +78,7 @@ The active runtime loads local assets directly from the project package:
 
 - image assets from `images/`
 - audio assets from `audio/`
-- the shared `Marker Felt` font asset from `fonts/marker-felt.ttf`
+- the shared handwritten font asset from `fonts/ma-shan-zheng-ui.ttf`
 - background music plus pooled sound effects through `wx.createInnerAudioContext()`
 - canvas text styling through a shared `wx.loadFont()` attempt with system-font fallback
 
@@ -113,7 +113,7 @@ The minigame build includes:
 - animated top-three badges inside the friend leaderboard view
 - floating score text, banners, screen flash, shake, and vibration feedback
 - BGM plus dedicated button, pickup, bomb, bullet, enemy-destruction, and game-over sound effects
-- unified canvas-drawn typography across gameplay HUD, overlays, and the friend leaderboard through the packaged `Marker Felt` font, with a safe fallback when the runtime cannot load the local font
+- unified canvas-drawn typography across gameplay HUD, overlays, and the friend leaderboard through the packaged handwritten font, with a safe fallback when the runtime cannot load the local font
 - best-score persistence through local storage
 
 ### 8. Known Scope

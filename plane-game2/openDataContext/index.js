@@ -57,6 +57,10 @@ function trySetCanvasDimension(targetCanvas, key, value) {
     return false;
   }
 
+  if (typeof sharedCanvas !== 'undefined' && targetCanvas === sharedCanvas) {
+    return false;
+  }
+
   try {
     targetCanvas[key] = value;
     return true;

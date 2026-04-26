@@ -67,7 +67,7 @@ Notes:
 - Verify that share revive can be used up to three times in a single run and is unavailable after the third revive.
 - Verify the shorter double-shot timing still feels readable on real devices.
 - Verify that sprites scale correctly on different DPR devices and that large enemies are not visually squashed.
-- Verify that the shared `Marker Felt` font loads for gameplay HUD, overlays, and the friend leaderboard; if it does not, confirm the system-font fallback still keeps text readable.
+- Verify that the shared handwritten font loads for gameplay HUD, overlays, and the friend leaderboard; if it does not, confirm the system-font fallback still keeps text readable.
 - Verify leaderboard close buttons and local/friend tab switching behave correctly in DevTools and on device.
 - Verify that supply-drop sprites remain distinguishable on real devices.
 - Verify that package size and ignored files are acceptable for upload.
