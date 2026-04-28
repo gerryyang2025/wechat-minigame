@@ -35,7 +35,9 @@ function DefenseMinigameRuntime(options) {
   this.audioSettings = this.normalizeAudioSettings(utils.safeGetStorage(STORAGE_AUDIO_SETTINGS, {}));
   this.audio = new audioModule.AudioManager(this.audioSettings);
   this.stageCatalog = content.getStageCatalog();
+  this.difficultyCatalog = content.getDifficultyCatalog();
   this.selectedStageKey = content.STAGE_ORDER[0];
+  this.selectedDifficultyKey = content.DEFAULT_DIFFICULTY_KEY;
 
   this.state = 'title';
   this.stage = null;
@@ -252,22 +254,27 @@ DefenseMinigameRuntime.prototype.getSnapshot = function () {
     state: this.state,
     wave: currentWave,
     lives: this.lives,
-    stageKey: this.stage ? this.stage.key : this.selectedStageKey
+    stageKey: this.stage ? this.stage.key : this.selectedStageKey,
+    difficultyKey: this.stage ? this.stage.difficultyKey : this.selectedDifficultyKey
   };
 };
 
 DefenseMinigameRuntime.prototype.normalizeBestWaves = function (value) {
   var map = {};
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    content.STAGE_ORDER.forEach(function (stageKey) {
-      map[stageKey] = 0;
-    });
-    return map;
-  }
+  var source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
 
   content.STAGE_ORDER.forEach(function (stageKey) {
-    map[stageKey] = typeof value[stageKey] === 'number' ? value[stageKey] : 0;
+    content.DIFFICULTY_ORDER.forEach(function (difficultyKey) {
+      var storageKey = stageKey + '::' + difficultyKey;
+      var legacyValue = difficultyKey === content.DEFAULT_DIFFICULTY_KEY ? source[stageKey] : undefined;
+      var exactValue = source[storageKey];
+
+      map[storageKey] = typeof exactValue === 'number'
+        ? exactValue
+        : (typeof legacyValue === 'number' ? legacyValue : 0);
+    });
   });
+
   return map;
 };
 
@@ -312,8 +319,21 @@ DefenseMinigameRuntime.prototype.toggleSfxEnabled = function () {
   }
 };
 
-DefenseMinigameRuntime.prototype.getBestWaveForStage = function (stageKey) {
-  return this.bestWaves[stageKey] || 0;
+DefenseMinigameRuntime.prototype.getBestWaveStorageKey = function (stageKey, difficultyKey) {
+  return stageKey + '::' + (difficultyKey || content.DEFAULT_DIFFICULTY_KEY);
+};
+
+DefenseMinigameRuntime.prototype.getBestWaveForStage = function (stageKey, difficultyKey) {
+  var resolvedDifficultyKey = difficultyKey;
+
+  if (!resolvedDifficultyKey && this.stage && this.stage.key === stageKey) {
+    resolvedDifficultyKey = this.stage.difficultyKey;
+  }
+  if (!resolvedDifficultyKey) {
+    resolvedDifficultyKey = this.selectedDifficultyKey || content.DEFAULT_DIFFICULTY_KEY;
+  }
+
+  return this.bestWaves[this.getBestWaveStorageKey(stageKey, resolvedDifficultyKey)] || 0;
 };
 
 DefenseMinigameRuntime.prototype.getSelectedStageMeta = function () {
@@ -330,12 +350,33 @@ DefenseMinigameRuntime.prototype.getSelectedStageMeta = function () {
   return found || this.stageCatalog[0];
 };
 
+DefenseMinigameRuntime.prototype.getSelectedDifficultyMeta = function () {
+  var found = null;
+
+  this.difficultyCatalog.some(function (difficultyMeta) {
+    if (difficultyMeta.key === this.selectedDifficultyKey) {
+      found = difficultyMeta;
+      return true;
+    }
+    return false;
+  }, this);
+
+  return found || this.difficultyCatalog[0];
+};
+
 DefenseMinigameRuntime.prototype.saveBestWaves = function () {
   utils.safeSetStorage(STORAGE_BEST_WAVES, this.bestWaves);
 };
 
 DefenseMinigameRuntime.prototype.startGame = function () {
-  this.stage = content.createStageData(this.width, this.height, this.scale, this.selectedStageKey, this.getStageViewportMetrics());
+  this.stage = content.createStageData(
+    this.width,
+    this.height,
+    this.scale,
+    this.selectedStageKey,
+    this.selectedDifficultyKey,
+    this.getStageViewportMetrics()
+  );
   this.towers = [];
   this.enemies = [];
   this.projectiles = [];
@@ -392,7 +433,7 @@ DefenseMinigameRuntime.prototype.returnToTitle = function () {
 
 DefenseMinigameRuntime.prototype.finishRun = function (didWin) {
   var clearedWave = didWin && this.stage ? this.stage.waves.length : this.clearedWaveCount;
-  var previousBestWave = this.getBestWaveForStage(this.stage.key);
+  var previousBestWave = this.getBestWaveForStage(this.stage.key, this.stage.difficultyKey);
   this.lastResult = {
     didWin: didWin,
     clearedWave: clearedWave,
@@ -403,7 +444,7 @@ DefenseMinigameRuntime.prototype.finishRun = function (didWin) {
     wasNewBestWave: clearedWave > previousBestWave
   };
   if (clearedWave > previousBestWave) {
-    this.bestWaves[this.stage.key] = clearedWave;
+    this.bestWaves[this.getBestWaveStorageKey(this.stage.key, this.stage.difficultyKey)] = clearedWave;
     this.saveBestWaves();
   }
   this.audio.playSfx(didWin ? 'victory' : 'defeat');
@@ -450,6 +491,7 @@ DefenseMinigameRuntime.prototype.getTouchPoint = function (event) {
 DefenseMinigameRuntime.prototype.handleTouchStart = function (event) {
   var point = this.getTouchPoint(event);
   var selectedStageKey;
+  var selectedDifficultyKey;
 
   if (!point) {
     return;
@@ -469,6 +511,12 @@ DefenseMinigameRuntime.prototype.handleTouchStart = function (event) {
     selectedStageKey = this.findTitleStageAtPoint(point);
     if (selectedStageKey) {
       this.selectedStageKey = selectedStageKey;
+      this.audio.playSfx('uiTap');
+      return;
+    }
+    selectedDifficultyKey = this.findTitleDifficultyAtPoint(point);
+    if (selectedDifficultyKey) {
+      this.selectedDifficultyKey = selectedDifficultyKey;
       this.audio.playSfx('uiTap');
       return;
     }
@@ -562,6 +610,21 @@ DefenseMinigameRuntime.prototype.handleTouchCancel = function () {
 
 DefenseMinigameRuntime.prototype.findTitleStageAtPoint = function (point) {
   var rects = this.touchRects.titleStageButtons || {};
+  var foundKey = '';
+
+  Object.keys(rects).some(function (key) {
+    if (utils.pointInRect(point.x, point.y, rects[key])) {
+      foundKey = key;
+      return true;
+    }
+    return false;
+  });
+
+  return foundKey;
+};
+
+DefenseMinigameRuntime.prototype.findTitleDifficultyAtPoint = function (point) {
+  var rects = this.touchRects.titleDifficultyButtons || {};
   var foundKey = '';
 
   Object.keys(rects).some(function (key) {
@@ -915,31 +978,56 @@ DefenseMinigameRuntime.prototype.startWave = function (waveIndex) {
   this.audio.playSfx('waveStart');
 };
 
-DefenseMinigameRuntime.prototype.spawnEnemy = function (typeKey) {
+DefenseMinigameRuntime.prototype.spawnEnemy = function (typeKey, spawnOptions) {
   var enemyType = this.stage.enemyTypes[typeKey];
   var startPoint = this.stage.path[0];
   var id = 'enemy-' + this.nextEntityId;
+  var size;
+  var centerX;
+  var centerY;
+  var spawnData = spawnOptions || {};
 
   this.nextEntityId += 1;
+  size = enemyType.size * this.scale;
+  centerX = spawnData.centerX !== undefined ? spawnData.centerX : startPoint.x;
+  centerY = spawnData.centerY !== undefined ? spawnData.centerY : startPoint.y;
   this.enemies.push({
     id: id,
     typeKey: typeKey,
-    width: enemyType.size * this.scale,
-    height: enemyType.size * this.scale,
-    x: startPoint.x - (enemyType.size * this.scale) / 2,
-    y: startPoint.y - (enemyType.size * this.scale) / 2,
+    width: size,
+    height: size,
+    x: centerX - size / 2,
+    y: centerY - size / 2,
     speed: enemyType.speed * this.scale,
     maxHealth: enemyType.maxHealth,
     health: enemyType.maxHealth,
     reward: enemyType.reward,
     damage: enemyType.damage,
-    waypointIndex: 0,
-    progress: 0,
+    waypointIndex: spawnData.waypointIndex || 0,
+    progress: spawnData.progress || 0,
     slowUntil: 0,
     slowAmount: 1,
+    slowResistance: enemyType.slowResistance || 0,
+    armor: enemyType.armor || 0,
+    armorBreakRatio: enemyType.armorBreakRatio || 0,
+    armorBroken: false,
+    sprintProgressRatio: enemyType.sprintProgressRatio || 0,
+    sprintDurationMs: enemyType.sprintDurationMs || 0,
+    sprintSpeedMultiplier: enemyType.sprintSpeedMultiplier || 1,
+    sprintIgnoresSlow: !!enemyType.sprintIgnoresSlow,
+    sprintTriggered: false,
+    sprintUntil: 0,
+    enrageHealthRatio: enemyType.enrageHealthRatio || 0,
+    enrageSpeedMultiplier: enemyType.enrageSpeedMultiplier || 1,
+    enrageSlowResistance: enemyType.enrageSlowResistance || 0,
+    summonOnEnrage: enemyType.summonOnEnrage || null,
+    enrageTriggered: false,
+    isEnraged: false,
     isDead: false
   });
-  this.showEnemyThreatCue(typeKey);
+  if (!spawnData.skipThreatCue) {
+    this.showEnemyThreatCue(typeKey);
+  }
 };
 
 DefenseMinigameRuntime.prototype.showEnemyThreatCue = function (typeKey) {
@@ -951,7 +1039,7 @@ DefenseMinigameRuntime.prototype.showEnemyThreatCue = function (typeKey) {
     this.waveThreatShown[typeKey] = true;
     this.showBanner(
       '重甲敌人出现',
-      this.stage && this.stage.key === 'kitchen_loop' ? '减速塔更适合拖住它们' : '优先集火，别让它拖过拐点',
+      this.stage && this.stage.key === 'kitchen_loop' ? '装甲会挡伤，减速效果也会变弱' : '优先集火，装甲打碎后更容易处理',
       1450
     );
     return;
@@ -959,8 +1047,107 @@ DefenseMinigameRuntime.prototype.showEnemyThreatCue = function (typeKey) {
 
   if (typeKey === 'mailman') {
     this.waveThreatShown[typeKey] = true;
-    this.showBanner('首领进入路线', '集中火力守住最后一波', 1650);
+    this.showBanner('首领进入路线', '半血后会狂暴，还会召来增援', 1650);
   }
+};
+
+DefenseMinigameRuntime.prototype.getEnemySlowFactor = function (enemy, now) {
+  var effectiveSlow = 1;
+  var slowResistance = 0;
+
+  if (!enemy || !enemy.slowUntil || now >= enemy.slowUntil) {
+    return 1;
+  }
+
+  effectiveSlow = enemy.slowAmount || 1;
+  slowResistance = enemy.slowResistance || 0;
+  if (enemy.isEnraged) {
+    slowResistance = Math.max(slowResistance, enemy.enrageSlowResistance || 0);
+  }
+  effectiveSlow = effectiveSlow + (1 - effectiveSlow) * slowResistance;
+
+  if (enemy.sprintUntil > now && enemy.sprintIgnoresSlow) {
+    return 1;
+  }
+
+  return utils.clamp(effectiveSlow, 0.28, 1);
+};
+
+DefenseMinigameRuntime.prototype.activateEnemySprint = function (enemy) {
+  if (!enemy || enemy.sprintTriggered || !enemy.sprintDurationMs) {
+    return;
+  }
+
+  enemy.sprintTriggered = true;
+  enemy.sprintUntil = Date.now() + enemy.sprintDurationMs;
+  this.pushFeedbackMark('enemyBuff', enemy.x + enemy.width / 2, enemy.y + enemy.height / 2, {
+    radius: Math.max(18 * this.scale, enemy.width * 0.65),
+    tint: '#6bc36a',
+    lifetime: 0.42
+  });
+
+  if (!this.waveThreatShown.cucumberSprint) {
+    this.waveThreatShown.cucumberSprint = true;
+    this.showBanner('黄瓜怪冲刺', '接近后段路线时会突然提速', 1350);
+  }
+};
+
+DefenseMinigameRuntime.prototype.breakEnemyArmor = function (enemy) {
+  if (!enemy || enemy.armorBroken || !enemy.armor) {
+    return;
+  }
+
+  enemy.armorBroken = true;
+  this.pushFeedbackMark('enemyArmorBreak', enemy.x + enemy.width / 2, enemy.y + enemy.height / 2, {
+    radius: Math.max(18 * this.scale, enemy.width * 0.72),
+    tint: '#8ca2d8',
+    lifetime: 0.5
+  });
+
+  if (!this.waveThreatShown.vacuumArmorBreak) {
+    this.waveThreatShown.vacuumArmorBreak = true;
+    this.showHint('吸尘器装甲裂开了，快补火力', 1050);
+  }
+};
+
+DefenseMinigameRuntime.prototype.triggerEnemyEnrage = function (enemy) {
+  var summonList = enemy && enemy.summonOnEnrage ? enemy.summonOnEnrage : null;
+  var self = this;
+  var spawnIndex = 0;
+
+  if (!enemy || enemy.enrageTriggered) {
+    return;
+  }
+
+  enemy.enrageTriggered = true;
+  enemy.isEnraged = true;
+  this.pushFeedbackMark('enemyBuff', enemy.x + enemy.width / 2, enemy.y + enemy.height / 2, {
+    radius: Math.max(22 * this.scale, enemy.width * 0.82),
+    tint: '#ef7b6d',
+    lifetime: 0.58
+  });
+
+  if (summonList && summonList.length) {
+    summonList.forEach(function (entry) {
+      var count = Math.max(1, entry.count || 1);
+      var i;
+
+      for (i = 0; i < count; i += 1) {
+        var offsetX = (spawnIndex % 2 === 0 ? -1 : 1) * (12 + i * 6) * self.scale;
+        var offsetY = (spawnIndex % 3 - 1) * 10 * self.scale;
+        self.spawnEnemy(entry.type, {
+          centerX: enemy.x + enemy.width / 2 + offsetX,
+          centerY: enemy.y + enemy.height / 2 + offsetY,
+          waypointIndex: enemy.waypointIndex,
+          progress: Math.max(0, enemy.progress - 6 * self.scale),
+          skipThreatCue: true
+        });
+        spawnIndex += 1;
+      }
+    });
+  }
+
+  this.showBanner('邮差狂暴', '提速冲线，并叫来了增援', 1550);
 };
 
 DefenseMinigameRuntime.prototype.isEnemyPressuringTarget = function (enemy) {
@@ -993,6 +1180,15 @@ DefenseMinigameRuntime.prototype.updateEnemies = function (dt) {
       return;
     }
 
+    if (
+      !enemy.sprintTriggered &&
+      enemy.sprintProgressRatio > 0 &&
+      self.stage.pathLength > 0 &&
+      enemy.progress / self.stage.pathLength >= enemy.sprintProgressRatio
+    ) {
+      self.activateEnemySprint(enemy);
+    }
+
     nextWaypoint = self.stage.path[enemy.waypointIndex + 1];
     if (!nextWaypoint) {
       reachedTargetIds.push(enemy.id);
@@ -1004,7 +1200,13 @@ DefenseMinigameRuntime.prototype.updateEnemies = function (dt) {
     dx = nextWaypoint.x - centerX;
     dy = nextWaypoint.y - centerY;
     dist = Math.sqrt(dx * dx + dy * dy) || 1;
-    speedFactor = Date.now() < enemy.slowUntil ? enemy.slowAmount : 1;
+    speedFactor = self.getEnemySlowFactor(enemy, now);
+    if (enemy.sprintUntil > now) {
+      speedFactor *= enemy.sprintSpeedMultiplier || 1;
+    }
+    if (enemy.isEnraged) {
+      speedFactor *= enemy.enrageSpeedMultiplier || 1;
+    }
     step = enemy.speed * speedFactor * dt;
 
     if (dist <= step) {
@@ -1211,8 +1413,12 @@ DefenseMinigameRuntime.prototype.resolveProjectileImpact = function (projectile,
     if (utils.distanceSquared(centerX, centerY, x, y) <= hitRadius * hitRadius) {
       this.applyDamageToEnemy(enemy, projectile.damage);
       if (projectile.kind === 'boba' && projectile.slowDuration > 0) {
-        enemy.slowUntil = Date.now() + projectile.slowDuration;
-        enemy.slowAmount = projectile.slowAmount;
+        var slowAppliedAt = Date.now();
+        var wasAlreadySlowed = slowAppliedAt < enemy.slowUntil;
+        enemy.slowUntil = slowAppliedAt + projectile.slowDuration;
+        enemy.slowAmount = wasAlreadySlowed && enemy.slowAmount < projectile.slowAmount
+          ? enemy.slowAmount
+          : projectile.slowAmount;
       }
       hitCount += 1;
     }
@@ -1230,7 +1436,31 @@ DefenseMinigameRuntime.prototype.resolveProjectileImpact = function (projectile,
 };
 
 DefenseMinigameRuntime.prototype.applyDamageToEnemy = function (enemy, damage) {
-  enemy.health -= damage;
+  var actualDamage = damage;
+
+  if (enemy.armor > 0 && !enemy.armorBroken) {
+    actualDamage = Math.max(1, damage - enemy.armor);
+  }
+
+  enemy.health -= actualDamage;
+  if (
+    enemy.armor > 0 &&
+    !enemy.armorBroken &&
+    enemy.health > 0 &&
+    enemy.armorBreakRatio > 0 &&
+    enemy.health / enemy.maxHealth <= enemy.armorBreakRatio
+  ) {
+    this.breakEnemyArmor(enemy);
+  }
+  if (
+    enemy.health > 0 &&
+    enemy.enrageHealthRatio > 0 &&
+    !enemy.enrageTriggered &&
+    enemy.health / enemy.maxHealth <= enemy.enrageHealthRatio
+  ) {
+    this.triggerEnemyEnrage(enemy);
+  }
+
   if (enemy.health <= 0 && !enemy.isDead) {
     enemy.isDead = true;
     this.gold += enemy.reward;
@@ -1402,18 +1632,23 @@ DefenseMinigameRuntime.prototype.getTitleLayout = function () {
   var stageGap = this.getScaledSize(12, 8, 14);
   var stageWidth = (panelWidth - innerPadX * 2 - stageGap) / 2;
   var stageX = panelX + innerPadX;
-  var stageHeight = this.getScaledSize(74, 64, 76);
+  var stageHeight = this.getScaledSize(70, 60, 72);
+  var difficultyGap = this.getScaledSize(8, 6, 10);
+  var difficultyButtonHeight = this.getScaledSize(28, 24, 30);
+  var difficultyButtonWidth = (panelWidth - innerPadX * 2 - difficultyGap * 2) / 3;
   var cardGapX = this.getScaledSize(12, 8, 14);
   var cardGapY = this.getScaledSize(10, 8, 12);
   var cardWidth = (panelWidth - innerPadX * 2 - cardGapX) / 2;
-  var cardHeight = this.getScaledSize(64, 54, 66);
+  var cardHeight = this.getScaledSize(58, 50, 60);
   var startButtonWidth = Math.min(panelWidth - innerPadX * 2, this.getScaledSize(216, 180, 224));
   var startButtonHeight = metrics.primaryButtonHeight + (metrics.compact ? 0 : this.getScaledSize(4, 2, 6));
   var startButtonY = panelY + panelHeight - innerPadY - startButtonHeight;
-  var footerTextY = startButtonY - this.getScaledSize(26, 20, 30);
+  var footerTextY = startButtonY - this.getScaledSize(24, 18, 28);
   var footerLineY = footerTextY - this.getScaledSize(18, 14, 22);
   var cardsY = footerLineY - this.getScaledSize(18, 14, 22) - (cardHeight * 2 + cardGapY);
-  var stageY = cardsY - this.getScaledSize(18, 14, 22) - stageHeight;
+  var difficultyButtonsY = cardsY - this.getScaledSize(14, 10, 16) - difficultyButtonHeight;
+  var difficultyLabelY = difficultyButtonsY - this.getScaledSize(16, 12, 18);
+  var stageY = difficultyLabelY - this.getScaledSize(18, 14, 22) - stageHeight;
   var stageLabelY = stageY - this.getScaledSize(18, 14, 20);
   var badgeY = panelY + innerPadY;
   var gapToHero = this.getScaledSize(18, 12, 20);
@@ -1460,6 +1695,7 @@ DefenseMinigameRuntime.prototype.getTitleLayout = function () {
     descGap: descGap,
     descWidth: panelWidth - innerPadX * 2 - this.getScaledSize(12, 8, 16),
     stageLabelY: stageLabelY,
+    difficultyLabelY: difficultyLabelY,
     footerLineY: footerLineY,
     footerTextY: footerTextY,
     badgeY: badgeY,
@@ -1494,6 +1730,26 @@ DefenseMinigameRuntime.prototype.getTitleLayout = function () {
         height: stageHeight
       }
     },
+    difficultyButtons: {
+      easy: {
+        x: panelX + innerPadX,
+        y: difficultyButtonsY,
+        width: difficultyButtonWidth,
+        height: difficultyButtonHeight
+      },
+      normal: {
+        x: panelX + innerPadX + difficultyButtonWidth + difficultyGap,
+        y: difficultyButtonsY,
+        width: difficultyButtonWidth,
+        height: difficultyButtonHeight
+      },
+      hard: {
+        x: panelX + innerPadX + (difficultyButtonWidth + difficultyGap) * 2,
+        y: difficultyButtonsY,
+        width: difficultyButtonWidth,
+        height: difficultyButtonHeight
+      }
+    },
     towerCards: {
       x: panelX + innerPadX,
       y: cardsY,
@@ -1517,6 +1773,10 @@ DefenseMinigameRuntime.prototype.getTitleStartButtonRect = function () {
 
 DefenseMinigameRuntime.prototype.getTitleStageButtonRects = function () {
   return this.getTitleLayout().stageButtons;
+};
+
+DefenseMinigameRuntime.prototype.getTitleDifficultyButtonRects = function () {
+  return this.getTitleLayout().difficultyButtons;
 };
 
 DefenseMinigameRuntime.prototype.getTitleAudioButtonRects = function () {
@@ -1741,6 +2001,7 @@ DefenseMinigameRuntime.prototype.rebuildTouchRects = function () {
   this.touchRects.waveButton = this.stage ? this.getWaveButtonRect() : null;
   this.touchRects.titleStartButton = titleLayout.startButton;
   this.touchRects.titleStageButtons = titleLayout.stageButtons;
+  this.touchRects.titleDifficultyButtons = titleLayout.difficultyButtons;
   this.touchRects.titleMusicButton = titleLayout.audioButtons.music;
   this.touchRects.titleSfxButton = titleLayout.audioButtons.sfx;
 
@@ -2006,6 +2267,36 @@ DefenseMinigameRuntime.prototype.getStagePalette = function (stageKey) {
   };
 };
 
+DefenseMinigameRuntime.prototype.getDifficultyPalette = function (difficultyKey) {
+  if (difficultyKey === 'easy') {
+    return {
+      fill: 'rgba(123, 207, 138, 0.18)',
+      stroke: 'rgba(86, 143, 96, 0.28)',
+      strongFill: 'rgba(123, 207, 138, 0.28)',
+      strongStroke: 'rgba(86, 143, 96, 0.48)',
+      text: '#2f7650'
+    };
+  }
+
+  if (difficultyKey === 'hard') {
+    return {
+      fill: 'rgba(239, 123, 109, 0.16)',
+      stroke: 'rgba(164, 74, 63, 0.24)',
+      strongFill: 'rgba(239, 123, 109, 0.26)',
+      strongStroke: 'rgba(164, 74, 63, 0.42)',
+      text: '#9a433a'
+    };
+  }
+
+  return {
+    fill: 'rgba(255, 184, 106, 0.18)',
+    stroke: 'rgba(154, 94, 27, 0.22)',
+    strongFill: 'rgba(255, 184, 106, 0.28)',
+    strongStroke: 'rgba(154, 94, 27, 0.4)',
+    text: '#9a5e1b'
+  };
+};
+
 DefenseMinigameRuntime.prototype.drawBadgePill = function (centerX, y, width, label, iconKey, fillStyle, strokeStyle, textColor) {
   var iconImage = iconKey ? this.assets.get(iconKey) : null;
   var metrics = this.getUiMetrics();
@@ -2112,7 +2403,9 @@ DefenseMinigameRuntime.prototype.renderTitle = function () {
   var panelHeight = panel.height;
   var button = layout.startButton;
   var stageRects = layout.stageButtons || {};
+  var difficultyRects = layout.difficultyButtons || {};
   var selectedStage = this.getSelectedStageMeta();
+  var selectedDifficulty = this.getSelectedDifficultyMeta();
   var i;
   var towerKeys = ['tabby', 'siamese', 'chonky', 'boba'];
   var cardWidth = layout.towerCards.width;
@@ -2135,12 +2428,13 @@ DefenseMinigameRuntime.prototype.renderTitle = function () {
   var stageTitleWidth;
   var stageSummaryWidth;
   var palette;
-  var progressRatio;
-  var progressWidth;
-  var progressY;
   var badgeWidth;
   var stageStatusLabel;
   var audioButtons = layout.audioButtons;
+  var difficultyMeta;
+  var difficultyRect;
+  var difficultyPalette;
+  var difficultySelected;
 
   this.drawClampedText(gameMeta.GAME_TITLE, this.width / 2, layout.titleY, this.width - metrics.pageMargin * 2 - this.getScaledSize(120, 96, 126), metrics.titleFont, metrics.titleFont - 6, 'bold', INK, 'center', 'middle');
   this.drawClampedText(gameMeta.GAME_SLOGAN, this.width / 2, layout.sloganY, this.width - metrics.pageMargin * 2, metrics.sloganFont, metrics.sloganFont - 3, 'bold', SOFT_INK, 'center', 'middle');
@@ -2155,7 +2449,7 @@ DefenseMinigameRuntime.prototype.renderTitle = function () {
   });
   this.drawPanelTexture(panelX, panelY, panelWidth, panelHeight, metrics.panelRadius, 0.16);
 
-  this.drawBadgePill(this.width / 2, layout.badgeY, layout.badgeWidth, '双关守卫 · 5 波挑战', 'iconKibble');
+  this.drawBadgePill(this.width / 2, layout.badgeY, layout.badgeWidth, '双关守卫 · 10 波挑战', 'iconKibble');
   this.drawAudioToggleButton(audioButtons.music, '音乐', this.audioSettings.musicEnabled);
   this.drawAudioToggleButton(audioButtons.sfx, '音效', this.audioSettings.sfxEnabled);
 
@@ -2198,14 +2492,11 @@ DefenseMinigameRuntime.prototype.renderTitle = function () {
     if (!stageRect) {
       continue;
     }
-    stageBest = this.getBestWaveForStage(stageMeta.key);
+    stageBest = this.getBestWaveForStage(stageMeta.key, this.selectedDifficultyKey);
     isSelected = stageMeta.key === this.selectedStageKey;
     palette = this.getStagePalette(stageMeta.key);
     stageTitleRightX = stageRect.x + stageRect.width - this.getScaledSize(12, 10, 14);
     stageSummaryWidth = stageRect.width - this.getScaledSize(28, 24, 30);
-    progressRatio = utils.clamp(stageMeta.waveCount ? stageBest / stageMeta.waveCount : 0, 0, 1);
-    progressWidth = stageRect.width - this.getScaledSize(24, 20, 26);
-    progressY = stageRect.y + stageRect.height - this.getScaledSize(9, 8, 10);
     badgeWidth = Math.min(
       Math.max(this.getScaledSize(50, 44, 54), this.measureTextWidth(stageMeta.badge, this.getScaledSize(9, 8, 10), 'bold') + this.getScaledSize(16, 14, 18)),
       stageRect.width - this.getScaledSize(82, 74, 88)
@@ -2233,7 +2524,6 @@ DefenseMinigameRuntime.prototype.renderTitle = function () {
       isSelected ? 3 : 2
     );
     this.drawPanelTexture(stageRect.x, stageRect.y, stageRect.width, stageRect.height, metrics.cardRadius, isSelected ? 0.18 : 0.12);
-    utils.fillRoundRect(this.ctx, stageRect.x + this.getScaledSize(8, 6, 8), stageRect.y + this.getScaledSize(10, 8, 10), this.getScaledSize(4, 4, 5), stageRect.height - this.getScaledSize(20, 16, 20), this.getScaledSize(3, 3, 4), isSelected ? palette.accent : 'rgba(84, 65, 40, 0.12)');
     this.drawAssetCentered(this.assets.get(this.getStageIconKey(stageMeta.key)), stageRect.x + this.getScaledSize(18, 16, 20), stageRect.y + this.getScaledSize(20, 18, 22), this.getScaledSize(20, 18, 22), this.getScaledSize(20, 18, 22), isSelected ? 0.96 : 0.82);
     this.drawClampedText(stageMeta.title, stageRect.x + this.getScaledSize(34, 30, 36), stageRect.y + this.getScaledSize(21, 18, 22), stageTitleWidth, this.getScaledSize(13, 11, 14), this.getScaledSize(10, 9, 11), 'bold', INK, 'left', 'middle');
     this.drawInlinePill(
@@ -2251,8 +2541,40 @@ DefenseMinigameRuntime.prototype.renderTitle = function () {
     this.drawClampedText(stageMeta.summary, stageRect.x + this.getScaledSize(14, 12, 16), stageRect.y + this.getScaledSize(42, 36, 44), stageSummaryWidth, this.getScaledSize(10, 9, 11), this.getScaledSize(8, 8, 9), null, SOFT_INK, 'left', 'middle');
     this.drawClampedText(stageStatusLabel, stageRect.x + this.getScaledSize(14, 12, 16), stageRect.y + stageRect.height - this.getScaledSize(18, 16, 20), stageRect.width * 0.45, this.getScaledSize(9, 8, 10), this.getScaledSize(8, 7, 8), 'bold', isSelected ? palette.accentText : 'rgba(84, 65, 40, 0.56)', 'left', 'middle');
     this.drawClampedText(stageBest + '/' + stageMeta.waveCount + ' 波', stageTitleRightX, stageRect.y + stageRect.height - this.getScaledSize(18, 16, 20), stageRect.width * 0.42, this.getScaledSize(9, 8, 10), this.getScaledSize(8, 7, 8), 'bold', INK, 'right', 'middle');
-    utils.fillRoundRect(this.ctx, stageRect.x + this.getScaledSize(12, 10, 14), progressY, progressWidth, this.getScaledSize(4, 4, 5), this.getScaledSize(3, 3, 4), palette.progressBase);
-    utils.fillRoundRect(this.ctx, stageRect.x + this.getScaledSize(12, 10, 14), progressY, progressWidth * progressRatio, this.getScaledSize(4, 4, 5), this.getScaledSize(3, 3, 4), palette.accent);
+  }
+
+  this.drawClampedText('选择难度', this.width / 2, layout.difficultyLabelY, panelWidth - layout.panelPaddingX * 2, metrics.captionFont, metrics.detailFont, 'bold', SOFT_INK, 'center', 'middle');
+
+  for (i = 0; i < this.difficultyCatalog.length; i += 1) {
+    difficultyMeta = this.difficultyCatalog[i];
+    difficultyRect = difficultyRects[difficultyMeta.key];
+    difficultyPalette = this.getDifficultyPalette(difficultyMeta.key);
+    difficultySelected = difficultyMeta.key === this.selectedDifficultyKey;
+
+    if (!difficultyRect) {
+      continue;
+    }
+
+    this.drawTexturedButton(
+      difficultyRect,
+      this.getScaledSize(14, 12, 14),
+      difficultySelected ? difficultyPalette.strongFill : difficultyPalette.fill,
+      difficultySelected ? difficultyPalette.strongStroke : difficultyPalette.stroke,
+      difficultySelected ? 3 : 2,
+      difficultySelected ? 0.1 : 0.06
+    );
+    this.drawClampedText(
+      difficultyMeta.title,
+      difficultyRect.x + difficultyRect.width / 2,
+      difficultyRect.y + difficultyRect.height / 2 + 1 * this.scale,
+      difficultyRect.width - this.getScaledSize(10, 8, 12),
+      this.getScaledSize(11, 10, 12),
+      this.getScaledSize(8, 8, 9),
+      'bold',
+      difficultyPalette.text,
+      'center',
+      'middle'
+    );
   }
 
   for (i = 0; i < towerKeys.length; i += 1) {
@@ -2278,7 +2600,7 @@ DefenseMinigameRuntime.prototype.renderTitle = function () {
 
   this.drawSectionRule(panelX, panelY, panelWidth, layout.footerLineY);
   this.drawClampedText(
-    '当前关卡最佳 ' + this.getBestWaveForStage(selectedStage.key) + '/' + selectedStage.waveCount + ' · ' + selectedStage.objective,
+    '当前难度 ' + selectedDifficulty.title + ' · ' + selectedDifficulty.summary + ' · 最佳 ' + this.getBestWaveForStage(selectedStage.key, this.selectedDifficultyKey) + '/' + selectedStage.waveCount + ' 波',
     this.width / 2,
     layout.footerTextY,
     panelWidth - layout.panelPaddingX * 2,
@@ -2401,7 +2723,7 @@ DefenseMinigameRuntime.prototype.renderGameplayHud = function () {
   var panelLayout;
   var statDividerX;
   var stagePalette = this.getStagePalette(this.stage.key);
-  var stageBadgeText = this.stage.badge || '守卫路线';
+  var stageBadgeText = (this.stage.badge || '守卫路线') + ' · ' + (this.stage.difficulty ? this.stage.difficulty.badge : '标准');
   var stageBadgeWidth;
   var stageTitleWidth;
   var stageBadgeHeight;
@@ -2752,7 +3074,7 @@ DefenseMinigameRuntime.prototype.renderPauseOverlay = function () {
   this.drawAudioToggleButton(audioButtons.music, '音乐', this.audioSettings.musicEnabled);
   this.drawAudioToggleButton(audioButtons.sfx, '音效', this.audioSettings.sfxEnabled);
   this.drawClampedText('暂停中', this.width / 2, layout.titleY, panel.width - this.getScaledSize(48, 32, 52), this.getScaledSize(30, 24, 30), this.getScaledSize(20, 18, 22), 'bold', INK, 'center', 'middle');
-  this.drawClampedText(this.stage.title + ' · 第 ' + visibleWave + ' 波', this.width / 2, layout.subtitleY, panel.width - this.getScaledSize(48, 32, 52), this.getScaledSize(14, 12, 14), this.getScaledSize(10, 9, 11), null, SOFT_INK, 'center', 'middle');
+  this.drawClampedText(this.stage.title + ' · ' + (this.stage.difficulty ? this.stage.difficulty.title : '标准') + ' · 第 ' + visibleWave + ' 波', this.width / 2, layout.subtitleY, panel.width - this.getScaledSize(48, 32, 52), this.getScaledSize(14, 12, 14), this.getScaledSize(10, 9, 11), null, SOFT_INK, 'center', 'middle');
   this.drawSectionRule(panel.x, panel.y, panel.width, layout.sectionLineY);
   this.drawMetricCard(layout.row1Left.x, layout.row1Left.y, layout.row1Left.width, layout.row1Left.height, '当前金币', String(this.gold), { iconKey: 'iconKibble' });
   this.drawMetricCard(layout.row1Right.x, layout.row1Right.y, layout.row1Right.width, layout.row1Right.height, '剩余生命', String(this.lives), { iconKey: 'defenseTarget' });
@@ -2782,8 +3104,8 @@ DefenseMinigameRuntime.prototype.renderResultOverlay = function (didWin) {
     time: this.elapsedTime
   };
   var primaryLabel = didWin ? '再守一局' : '重新挑战';
-  var bestWave = this.stage ? this.getBestWaveForStage(this.stage.key) : 0;
-  var resultSummary = this.stage ? (this.stage.title + ' · ' + result.clearedWave + '/' + this.stage.waves.length + ' 波') : ('完成波次 ' + result.clearedWave);
+  var bestWave = this.stage ? this.getBestWaveForStage(this.stage.key, this.stage.difficultyKey) : 0;
+  var resultSummary = this.stage ? (this.stage.title + ' · ' + (this.stage.difficulty ? this.stage.difficulty.title : '标准') + ' · ' + result.clearedWave + '/' + this.stage.waves.length + ' 波') : ('完成波次 ' + result.clearedWave);
   var actionTray;
   var actionLabelY;
 
@@ -3348,10 +3670,35 @@ DefenseMinigameRuntime.prototype.drawEnemy = function (enemy) {
   var centerX = enemy.x + enemy.width / 2;
   var centerY = enemy.y + enemy.height / 2;
   var hpRatio = utils.clamp(enemy.health / enemy.maxHealth, 0, 1);
-  var badgeText = enemy.typeKey === 'vacuum' ? '重甲' : (enemy.typeKey === 'mailman' ? '首领' : '');
+  var badgeText = '';
+  var badgeFill = 'rgba(114, 134, 192, 0.9)';
+  var auraFill = 'rgba(114, 134, 192, 0.82)';
   var pulse = 0.5 + Math.sin(Date.now() / 180) * 0.18;
 
+  if (enemy.typeKey === 'vacuum') {
+    badgeText = enemy.armorBroken ? '破甲' : '装甲';
+    badgeFill = enemy.armorBroken ? 'rgba(126, 215, 193, 0.9)' : 'rgba(114, 134, 192, 0.9)';
+    auraFill = enemy.armorBroken ? 'rgba(126, 215, 193, 0.82)' : 'rgba(114, 134, 192, 0.82)';
+  } else if (enemy.typeKey === 'mailman') {
+    badgeText = enemy.isEnraged ? '狂暴' : '首领';
+    badgeFill = enemy.isEnraged ? 'rgba(239, 123, 109, 0.94)' : 'rgba(239, 123, 109, 0.9)';
+    auraFill = enemy.isEnraged ? 'rgba(239, 123, 109, 0.94)' : 'rgba(239, 123, 109, 0.9)';
+  } else if (enemy.typeKey === 'cucumber' && enemy.sprintUntil > Date.now()) {
+    badgeText = '冲刺';
+    badgeFill = 'rgba(107, 195, 106, 0.92)';
+    auraFill = 'rgba(107, 195, 106, 0.82)';
+  }
+
   this.ctx.save();
+  if (enemy.sprintUntil > Date.now() || enemy.isEnraged) {
+    this.ctx.save();
+    this.ctx.globalAlpha = 0.14 + pulse * 0.14;
+    this.ctx.fillStyle = enemy.isEnraged ? 'rgba(239, 123, 109, 0.85)' : 'rgba(107, 195, 106, 0.82)';
+    this.ctx.beginPath();
+    this.ctx.arc(centerX, centerY, enemy.width * 0.86, 0, Math.PI * 2);
+    this.ctx.fill();
+    this.ctx.restore();
+  }
   if (image) {
     this.drawAssetFit(image, enemy.x, enemy.y, enemy.width, enemy.height);
   } else {
@@ -3407,12 +3754,12 @@ DefenseMinigameRuntime.prototype.drawEnemy = function (enemy) {
   if (badgeText) {
     this.ctx.save();
     this.ctx.globalAlpha = 0.12 + pulse * 0.18;
-    this.ctx.fillStyle = enemy.typeKey === 'mailman' ? 'rgba(239, 123, 109, 0.9)' : 'rgba(114, 134, 192, 0.82)';
+    this.ctx.fillStyle = auraFill;
     this.ctx.beginPath();
     this.ctx.arc(centerX, centerY, enemy.width * (enemy.typeKey === 'mailman' ? 0.82 : 0.74), 0, Math.PI * 2);
     this.ctx.fill();
     this.ctx.restore();
-    utils.fillRoundRect(this.ctx, centerX - 15 * this.scale, enemy.y - 28 * this.scale, 30 * this.scale, 14 * this.scale, 8 * this.scale, enemy.typeKey === 'mailman' ? 'rgba(239, 123, 109, 0.9)' : 'rgba(114, 134, 192, 0.9)');
+    utils.fillRoundRect(this.ctx, centerX - 15 * this.scale, enemy.y - 28 * this.scale, 30 * this.scale, 14 * this.scale, 8 * this.scale, badgeFill);
     utils.setTextStyle(this.ctx, 8 * this.scale, 'bold', '#fffaf2', 'center', 'middle');
     this.ctx.fillText(badgeText, centerX, enemy.y - 21 * this.scale);
   }
@@ -3518,6 +3865,23 @@ DefenseMinigameRuntime.prototype.drawFeedbackMark = function (mark) {
     this.ctx.moveTo(mark.x - radius * 0.7, mark.y);
     this.ctx.lineTo(mark.x + radius * 0.7, mark.y);
     this.ctx.stroke();
+  } else if (mark.kind === 'enemyBuff' || mark.kind === 'enemyArmorBreak') {
+    this.ctx.strokeStyle = mark.tint;
+    this.ctx.lineWidth = mark.kind === 'enemyArmorBreak' ? 2.2 * this.scale : 2.8 * this.scale;
+    this.ctx.beginPath();
+    this.ctx.arc(mark.x, mark.y, radius, 0, Math.PI * 2);
+    this.ctx.stroke();
+    this.ctx.beginPath();
+    this.ctx.arc(mark.x, mark.y, radius * 0.54, 0, Math.PI * 2);
+    this.ctx.stroke();
+    if (mark.kind === 'enemyArmorBreak') {
+      this.ctx.beginPath();
+      this.ctx.moveTo(mark.x - radius * 0.5, mark.y - radius * 0.26);
+      this.ctx.lineTo(mark.x - radius * 0.08, mark.y + radius * 0.1);
+      this.ctx.lineTo(mark.x + radius * 0.16, mark.y - radius * 0.18);
+      this.ctx.lineTo(mark.x + radius * 0.5, mark.y + radius * 0.22);
+      this.ctx.stroke();
+    }
   } else {
     this.ctx.strokeStyle = mark.tint;
     this.ctx.lineWidth = 4 * this.scale;

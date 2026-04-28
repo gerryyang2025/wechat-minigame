@@ -85,7 +85,11 @@ var ENEMY_TYPES = {
     reward: 10,
     damage: 1,
     size: 26,
-    tint: '#6bc36a'
+    tint: '#6bc36a',
+    sprintProgressRatio: 0.58,
+    sprintDurationMs: 900,
+    sprintSpeedMultiplier: 1.85,
+    sprintIgnoresSlow: true
   },
   vacuum: {
     key: 'vacuum',
@@ -95,7 +99,10 @@ var ENEMY_TYPES = {
     reward: 24,
     damage: 2,
     size: 34,
-    tint: '#8ca2d8'
+    tint: '#8ca2d8',
+    armor: 5,
+    armorBreakRatio: 0.42,
+    slowResistance: 0.45
   },
   mailman: {
     key: 'mailman',
@@ -105,11 +112,83 @@ var ENEMY_TYPES = {
     reward: 70,
     damage: 4,
     size: 42,
-    tint: '#f5b06f'
+    tint: '#f5b06f',
+    enrageHealthRatio: 0.52,
+    enrageSpeedMultiplier: 1.28,
+    enrageSlowResistance: 0.38,
+    summonOnEnrage: [
+      { type: 'dust', count: 1 },
+      { type: 'cucumber', count: 1 }
+    ]
   }
 };
 
 var STAGE_ORDER = ['living_room', 'kitchen_loop'];
+var DIFFICULTY_ORDER = ['easy', 'normal', 'hard'];
+var DEFAULT_DIFFICULTY_KEY = 'normal';
+
+var DIFFICULTY_DEFS = {
+  easy: {
+    key: 'easy',
+    title: '轻松',
+    badge: '轻松',
+    summary: '更多资源 · 节奏更缓',
+    goldOffset: 30,
+    livesOffset: 2,
+    waveDelayMultiplier: 1.12,
+    spawnDelayMultiplier: 1.06,
+    enemyHealthMultiplier: 0.88,
+    enemySpeedMultiplier: 0.92,
+    enemyRewardMultiplier: 1,
+    enemyDamageOffset: 0,
+    armorOffset: -1,
+    slowResistanceOffset: -0.08,
+    sprintSpeedBonus: -0.12,
+    sprintDurationMultiplier: 0.9,
+    enrageSpeedBonus: -0.08,
+    summonCountOffset: 0
+  },
+  normal: {
+    key: 'normal',
+    title: '标准',
+    badge: '标准',
+    summary: '默认节奏 · 推荐体验',
+    goldOffset: 0,
+    livesOffset: 0,
+    waveDelayMultiplier: 1,
+    spawnDelayMultiplier: 1,
+    enemyHealthMultiplier: 1,
+    enemySpeedMultiplier: 1,
+    enemyRewardMultiplier: 1,
+    enemyDamageOffset: 0,
+    armorOffset: 0,
+    slowResistanceOffset: 0,
+    sprintSpeedBonus: 0,
+    sprintDurationMultiplier: 1,
+    enrageSpeedBonus: 0,
+    summonCountOffset: 0
+  },
+  hard: {
+    key: 'hard',
+    title: '困难',
+    badge: '困难',
+    summary: '少资源 · 快节奏 · 强敌机制',
+    goldOffset: -25,
+    livesOffset: -2,
+    waveDelayMultiplier: 0.82,
+    spawnDelayMultiplier: 0.84,
+    enemyHealthMultiplier: 1.22,
+    enemySpeedMultiplier: 1.1,
+    enemyRewardMultiplier: 1.05,
+    enemyDamageOffset: 1,
+    armorOffset: 1,
+    slowResistanceOffset: 0.12,
+    sprintSpeedBonus: 0.18,
+    sprintDurationMultiplier: 1.08,
+    enrageSpeedBonus: 0.12,
+    summonCountOffset: 1
+  }
+};
 
 var STAGE_DEFS = {
   living_room: {
@@ -136,55 +215,7 @@ var STAGE_DEFS = {
     startingGold: 140,
     startingLives: 10,
     waveDelayMs: 4200,
-    waves: [
-      {
-        label: '第1波',
-        spawns: [
-          { type: 'dust', delay: 0 },
-          { type: 'dust', delay: 520 },
-          { type: 'dust', delay: 520 },
-          { type: 'cucumber', delay: 820 }
-        ]
-      },
-      {
-        label: '第2波',
-        spawns: [
-          { type: 'dust', delay: 0 },
-          { type: 'cucumber', delay: 420 },
-          { type: 'dust', delay: 420 },
-          { type: 'cucumber', delay: 420 },
-          { type: 'cucumber', delay: 620 }
-        ]
-      },
-      {
-        label: '第3波',
-        spawns: [
-          { type: 'vacuum', delay: 0 },
-          { type: 'dust', delay: 650 },
-          { type: 'dust', delay: 360 },
-          { type: 'cucumber', delay: 380 },
-          { type: 'cucumber', delay: 380 }
-        ]
-      },
-      {
-        label: '第4波',
-        spawns: [
-          { type: 'vacuum', delay: 0 },
-          { type: 'cucumber', delay: 560 },
-          { type: 'cucumber', delay: 460 },
-          { type: 'vacuum', delay: 860 }
-        ]
-      },
-      {
-        label: '第5波',
-        spawns: [
-          { type: 'mailman', delay: 0 },
-          { type: 'cucumber', delay: 760 },
-          { type: 'vacuum', delay: 700 },
-          { type: 'cucumber', delay: 500 }
-        ]
-      }
-    ]
+    waves: null
   },
   kitchen_loop: {
     key: 'kitchen_loop',
@@ -220,63 +251,194 @@ var STAGE_DEFS = {
         upgradeRange: [146, 162]
       }
     },
-    waves: [
-      {
-        label: '第1波',
-        spawns: [
-          { type: 'dust', delay: 0 },
-          { type: 'cucumber', delay: 520 },
-          { type: 'dust', delay: 420 },
-          { type: 'cucumber', delay: 560 },
-          { type: 'dust', delay: 360 }
-        ]
-      },
-      {
-        label: '第2波',
-        spawns: [
-          { type: 'cucumber', delay: 0 },
-          { type: 'dust', delay: 420 },
-          { type: 'cucumber', delay: 420 },
-          { type: 'cucumber', delay: 520 },
-          { type: 'dust', delay: 300 },
-          { type: 'cucumber', delay: 480 }
-        ]
-      },
-      {
-        label: '第3波',
-        spawns: [
-          { type: 'vacuum', delay: 0 },
-          { type: 'cucumber', delay: 460 },
-          { type: 'dust', delay: 320 },
-          { type: 'cucumber', delay: 320 },
-          { type: 'vacuum', delay: 920 }
-        ]
-      },
-      {
-        label: '第4波',
-        spawns: [
-          { type: 'vacuum', delay: 0 },
-          { type: 'cucumber', delay: 460 },
-          { type: 'vacuum', delay: 760 },
-          { type: 'cucumber', delay: 420 },
-          { type: 'cucumber', delay: 360 },
-          { type: 'dust', delay: 260 }
-        ]
-      },
-      {
-        label: '第5波',
-        spawns: [
-          { type: 'mailman', delay: 0 },
-          { type: 'vacuum', delay: 680 },
-          { type: 'cucumber', delay: 420 },
-          { type: 'vacuum', delay: 620 },
-          { type: 'cucumber', delay: 360 },
-          { type: 'cucumber', delay: 320 }
-        ]
-      }
-    ]
+    waves: null
   }
 };
+
+STAGE_DEFS.living_room.waves = createLivingRoomWaves();
+STAGE_DEFS.kitchen_loop.waves = createKitchenLoopWaves();
+
+function buildWave(label, spawns) {
+  return {
+    label: label,
+    spawns: spawns
+  };
+}
+
+function createLivingRoomWaves() {
+  return [
+    buildWave('第1波', [
+      { type: 'dust', delay: 0 },
+      { type: 'dust', delay: 520 },
+      { type: 'dust', delay: 520 },
+      { type: 'cucumber', delay: 820 }
+    ]),
+    buildWave('第2波', [
+      { type: 'dust', delay: 0 },
+      { type: 'cucumber', delay: 420 },
+      { type: 'dust', delay: 420 },
+      { type: 'cucumber', delay: 420 },
+      { type: 'cucumber', delay: 620 }
+    ]),
+    buildWave('第3波', [
+      { type: 'vacuum', delay: 0 },
+      { type: 'dust', delay: 650 },
+      { type: 'dust', delay: 360 },
+      { type: 'cucumber', delay: 380 },
+      { type: 'cucumber', delay: 380 }
+    ]),
+    buildWave('第4波', [
+      { type: 'vacuum', delay: 0 },
+      { type: 'cucumber', delay: 560 },
+      { type: 'cucumber', delay: 460 },
+      { type: 'vacuum', delay: 860 }
+    ]),
+    buildWave('第5波', [
+      { type: 'mailman', delay: 0 },
+      { type: 'cucumber', delay: 760 },
+      { type: 'vacuum', delay: 700 },
+      { type: 'cucumber', delay: 500 }
+    ]),
+    buildWave('第6波', [
+      { type: 'dust', delay: 0 },
+      { type: 'cucumber', delay: 260 },
+      { type: 'dust', delay: 220 },
+      { type: 'cucumber', delay: 280 },
+      { type: 'cucumber', delay: 260 },
+      { type: 'vacuum', delay: 680 },
+      { type: 'dust', delay: 240 }
+    ]),
+    buildWave('第7波', [
+      { type: 'vacuum', delay: 0 },
+      { type: 'cucumber', delay: 360 },
+      { type: 'vacuum', delay: 520 },
+      { type: 'dust', delay: 240 },
+      { type: 'cucumber', delay: 260 },
+      { type: 'vacuum', delay: 620 }
+    ]),
+    buildWave('第8波', [
+      { type: 'vacuum', delay: 0 },
+      { type: 'cucumber', delay: 320 },
+      { type: 'cucumber', delay: 220 },
+      { type: 'vacuum', delay: 520 },
+      { type: 'dust', delay: 180 },
+      { type: 'cucumber', delay: 220 },
+      { type: 'dust', delay: 180 },
+      { type: 'cucumber', delay: 220 }
+    ]),
+    buildWave('第9波', [
+      { type: 'mailman', delay: 0 },
+      { type: 'vacuum', delay: 460 },
+      { type: 'cucumber', delay: 220 },
+      { type: 'vacuum', delay: 420 },
+      { type: 'dust', delay: 180 },
+      { type: 'cucumber', delay: 220 }
+    ]),
+    buildWave('第10波', [
+      { type: 'mailman', delay: 0 },
+      { type: 'vacuum', delay: 380 },
+      { type: 'cucumber', delay: 180 },
+      { type: 'vacuum', delay: 340 },
+      { type: 'dust', delay: 160 },
+      { type: 'cucumber', delay: 180 },
+      { type: 'vacuum', delay: 340 },
+      { type: 'cucumber', delay: 180 },
+      { type: 'dust', delay: 150 }
+    ])
+  ];
+}
+
+function createKitchenLoopWaves() {
+  return [
+    buildWave('第1波', [
+      { type: 'dust', delay: 0 },
+      { type: 'cucumber', delay: 520 },
+      { type: 'dust', delay: 420 },
+      { type: 'cucumber', delay: 560 },
+      { type: 'dust', delay: 360 }
+    ]),
+    buildWave('第2波', [
+      { type: 'cucumber', delay: 0 },
+      { type: 'dust', delay: 420 },
+      { type: 'cucumber', delay: 420 },
+      { type: 'cucumber', delay: 520 },
+      { type: 'dust', delay: 300 },
+      { type: 'cucumber', delay: 480 }
+    ]),
+    buildWave('第3波', [
+      { type: 'vacuum', delay: 0 },
+      { type: 'cucumber', delay: 460 },
+      { type: 'dust', delay: 320 },
+      { type: 'cucumber', delay: 320 },
+      { type: 'vacuum', delay: 920 }
+    ]),
+    buildWave('第4波', [
+      { type: 'vacuum', delay: 0 },
+      { type: 'cucumber', delay: 460 },
+      { type: 'vacuum', delay: 760 },
+      { type: 'cucumber', delay: 420 },
+      { type: 'cucumber', delay: 360 },
+      { type: 'dust', delay: 260 }
+    ]),
+    buildWave('第5波', [
+      { type: 'mailman', delay: 0 },
+      { type: 'vacuum', delay: 680 },
+      { type: 'cucumber', delay: 420 },
+      { type: 'vacuum', delay: 620 },
+      { type: 'cucumber', delay: 360 },
+      { type: 'cucumber', delay: 320 }
+    ]),
+    buildWave('第6波', [
+      { type: 'cucumber', delay: 0 },
+      { type: 'dust', delay: 220 },
+      { type: 'cucumber', delay: 220 },
+      { type: 'vacuum', delay: 520 },
+      { type: 'dust', delay: 200 },
+      { type: 'cucumber', delay: 220 },
+      { type: 'vacuum', delay: 540 },
+      { type: 'dust', delay: 180 }
+    ]),
+    buildWave('第7波', [
+      { type: 'vacuum', delay: 0 },
+      { type: 'vacuum', delay: 460 },
+      { type: 'cucumber', delay: 260 },
+      { type: 'cucumber', delay: 220 },
+      { type: 'dust', delay: 180 },
+      { type: 'vacuum', delay: 520 }
+    ]),
+    buildWave('第8波', [
+      { type: 'vacuum', delay: 0 },
+      { type: 'cucumber', delay: 240 },
+      { type: 'dust', delay: 160 },
+      { type: 'cucumber', delay: 200 },
+      { type: 'vacuum', delay: 420 },
+      { type: 'cucumber', delay: 200 },
+      { type: 'dust', delay: 150 },
+      { type: 'cucumber', delay: 180 },
+      { type: 'vacuum', delay: 460 }
+    ]),
+    buildWave('第9波', [
+      { type: 'mailman', delay: 0 },
+      { type: 'vacuum', delay: 420 },
+      { type: 'cucumber', delay: 220 },
+      { type: 'vacuum', delay: 340 },
+      { type: 'dust', delay: 160 },
+      { type: 'cucumber', delay: 180 },
+      { type: 'vacuum', delay: 380 }
+    ]),
+    buildWave('第10波', [
+      { type: 'mailman', delay: 0 },
+      { type: 'vacuum', delay: 320 },
+      { type: 'cucumber', delay: 160 },
+      { type: 'vacuum', delay: 280 },
+      { type: 'dust', delay: 140 },
+      { type: 'cucumber', delay: 160 },
+      { type: 'vacuum', delay: 320 },
+      { type: 'dust', delay: 140 },
+      { type: 'cucumber', delay: 160 }
+    ])
+  ];
+}
 
 function createLivingRoomPath(width, playTop, playBottom) {
   var fieldHeight = playBottom - playTop;
@@ -365,6 +527,43 @@ function cloneTowerTypes(baseTypes) {
   return cloned;
 }
 
+function cloneEnemyTypes(baseTypes) {
+  var cloned = {};
+
+  Object.keys(baseTypes).forEach(function (key) {
+    cloned[key] = {
+      key: baseTypes[key].key,
+      name: baseTypes[key].name,
+      maxHealth: baseTypes[key].maxHealth,
+      speed: baseTypes[key].speed,
+      reward: baseTypes[key].reward,
+      damage: baseTypes[key].damage,
+      size: baseTypes[key].size,
+      tint: baseTypes[key].tint,
+      armor: baseTypes[key].armor || 0,
+      armorBreakRatio: baseTypes[key].armorBreakRatio || 0,
+      slowResistance: baseTypes[key].slowResistance || 0,
+      sprintProgressRatio: baseTypes[key].sprintProgressRatio || 0,
+      sprintDurationMs: baseTypes[key].sprintDurationMs || 0,
+      sprintSpeedMultiplier: baseTypes[key].sprintSpeedMultiplier || 1,
+      sprintIgnoresSlow: !!baseTypes[key].sprintIgnoresSlow,
+      enrageHealthRatio: baseTypes[key].enrageHealthRatio || 0,
+      enrageSpeedMultiplier: baseTypes[key].enrageSpeedMultiplier || 1,
+      enrageSlowResistance: baseTypes[key].enrageSlowResistance || 0,
+      summonOnEnrage: baseTypes[key].summonOnEnrage
+        ? baseTypes[key].summonOnEnrage.map(function (entry) {
+          return {
+            type: entry.type,
+            count: entry.count
+          };
+        })
+        : null
+    };
+  });
+
+  return cloned;
+}
+
 function applyTowerTuning(towerTypes, tuning) {
   if (!tuning) {
     return towerTypes;
@@ -383,6 +582,67 @@ function applyTowerTuning(towerTypes, tuning) {
   return towerTypes;
 }
 
+function applyDifficultyToEnemyTypes(enemyTypes, difficultyMeta) {
+  Object.keys(enemyTypes).forEach(function (enemyKey) {
+    var enemy = enemyTypes[enemyKey];
+
+    enemy.maxHealth = Math.max(1, Math.round(enemy.maxHealth * difficultyMeta.enemyHealthMultiplier));
+    enemy.speed = enemy.speed * difficultyMeta.enemySpeedMultiplier;
+    enemy.reward = Math.max(1, Math.round(enemy.reward * difficultyMeta.enemyRewardMultiplier));
+    enemy.damage = Math.max(1, enemy.damage + difficultyMeta.enemyDamageOffset);
+    enemy.armor = Math.max(0, enemy.armor + difficultyMeta.armorOffset);
+    enemy.slowResistance = Math.max(0, Math.min(0.85, enemy.slowResistance + difficultyMeta.slowResistanceOffset));
+
+    if (enemy.sprintDurationMs) {
+      enemy.sprintDurationMs = Math.max(280, Math.round(enemy.sprintDurationMs * difficultyMeta.sprintDurationMultiplier));
+      enemy.sprintSpeedMultiplier = Math.max(1.08, enemy.sprintSpeedMultiplier + difficultyMeta.sprintSpeedBonus);
+    }
+
+    if (enemy.enrageSpeedMultiplier > 1) {
+      enemy.enrageSpeedMultiplier = Math.max(1.05, enemy.enrageSpeedMultiplier + difficultyMeta.enrageSpeedBonus);
+    }
+
+    if (enemy.summonOnEnrage && difficultyMeta.summonCountOffset) {
+      enemy.summonOnEnrage = enemy.summonOnEnrage.map(function (entry) {
+        return {
+          type: entry.type,
+          count: Math.max(1, entry.count + difficultyMeta.summonCountOffset)
+        };
+      });
+    }
+  });
+
+  return enemyTypes;
+}
+
+function applyDifficultyToWaves(waves, difficultyMeta) {
+  return waves.map(function (wave, waveIndex) {
+    return {
+      label: wave.label,
+      spawns: wave.spawns.map(function (spawn, spawnIndex) {
+        if (spawnIndex === 0) {
+          return {
+            type: spawn.type,
+            delay: spawn.delay
+          };
+        }
+
+        return {
+          type: spawn.type,
+          delay: Math.max(
+            90,
+            Math.round(
+              spawn.delay *
+              difficultyMeta.spawnDelayMultiplier *
+              (waveIndex >= 6 ? 0.95 : 1)
+            )
+          )
+        };
+      })
+    };
+  });
+}
+
 function assignSlotIds(slots) {
   return slots.map(function (slot, index) {
     return {
@@ -392,6 +652,21 @@ function assignSlotIds(slots) {
       radius: slot.radius
     };
   });
+}
+
+function getPathLength(path) {
+  var total = 0;
+  var i;
+  var dx;
+  var dy;
+
+  for (i = 0; i < path.length - 1; i += 1) {
+    dx = path[i + 1].x - path[i].x;
+    dy = path[i + 1].y - path[i].y;
+    total += Math.sqrt(dx * dx + dy * dy);
+  }
+
+  return total;
 }
 
 function createStageLayout(stageKey, width, playTop, playBottom) {
@@ -408,8 +683,9 @@ function createStageLayout(stageKey, width, playTop, playBottom) {
   };
 }
 
-function createStageData(width, height, scale, stageKey, layoutOverrides) {
+function createStageData(width, height, scale, stageKey, difficultyKey, layoutOverrides) {
   var def = STAGE_DEFS[stageKey] || STAGE_DEFS.living_room;
+  var difficultyMeta = DIFFICULTY_DEFS[difficultyKey] || DIFFICULTY_DEFS[DEFAULT_DIFFICULTY_KEY];
   var topHudHeight = layoutOverrides && layoutOverrides.topHudHeight !== undefined ? layoutOverrides.topHudHeight : 104 * scale;
   var bottomHudHeight = layoutOverrides && layoutOverrides.bottomHudHeight !== undefined ? layoutOverrides.bottomHudHeight : 164 * scale;
   var playTopGap = layoutOverrides && layoutOverrides.playTopGap !== undefined ? layoutOverrides.playTopGap : 18 * scale;
@@ -419,6 +695,11 @@ function createStageData(width, height, scale, stageKey, layoutOverrides) {
   var layout = createStageLayout(def.key, width, playTop, playBottom);
   var path = layout.path;
   var towerTypes = applyTowerTuning(cloneTowerTypes(TOWER_TYPES), def.towerTuning);
+  var enemyTypes;
+  var waves;
+
+  enemyTypes = applyDifficultyToEnemyTypes(cloneEnemyTypes(ENEMY_TYPES), difficultyMeta);
+  waves = applyDifficultyToWaves(def.waves, difficultyMeta);
 
   return {
     key: def.key,
@@ -426,16 +707,24 @@ function createStageData(width, height, scale, stageKey, layoutOverrides) {
     objective: def.objective,
     summary: def.summary,
     badge: def.badge,
+    difficultyKey: difficultyMeta.key,
+    difficulty: {
+      key: difficultyMeta.key,
+      title: difficultyMeta.title,
+      badge: difficultyMeta.badge,
+      summary: difficultyMeta.summary
+    },
     introHint: def.introHint,
     theme: def.theme,
-    startingGold: def.startingGold,
-    startingLives: def.startingLives,
-    waveDelayMs: def.waveDelayMs,
+    startingGold: Math.max(40, def.startingGold + difficultyMeta.goldOffset),
+    startingLives: Math.max(3, def.startingLives + difficultyMeta.livesOffset),
+    waveDelayMs: Math.max(1200, Math.round(def.waveDelayMs * difficultyMeta.waveDelayMultiplier)),
     topHudHeight: topHudHeight,
     bottomHudHeight: bottomHudHeight,
     playTop: playTop,
     playBottom: playBottom,
     path: path,
+    pathLength: getPathLength(path),
     target: {
       x: width - 70 * scale,
       y: path[path.length - 1].y,
@@ -444,8 +733,8 @@ function createStageData(width, height, scale, stageKey, layoutOverrides) {
     },
     buildSlots: layout.slots,
     towerTypes: towerTypes,
-    enemyTypes: ENEMY_TYPES,
-    waves: def.waves
+    enemyTypes: enemyTypes,
+    waves: waves
   };
 }
 
@@ -463,10 +752,26 @@ function getStageCatalog() {
   });
 }
 
+function getDifficultyCatalog() {
+  return DIFFICULTY_ORDER.map(function (difficultyKey) {
+    var def = DIFFICULTY_DEFS[difficultyKey];
+    return {
+      key: def.key,
+      title: def.title,
+      badge: def.badge,
+      summary: def.summary
+    };
+  });
+}
+
 module.exports = {
   TOWER_TYPES: TOWER_TYPES,
   ENEMY_TYPES: ENEMY_TYPES,
   STAGE_ORDER: STAGE_ORDER,
+  DIFFICULTY_ORDER: DIFFICULTY_ORDER,
+  DEFAULT_DIFFICULTY_KEY: DEFAULT_DIFFICULTY_KEY,
+  DIFFICULTY_DEFS: DIFFICULTY_DEFS,
   getStageCatalog: getStageCatalog,
+  getDifficultyCatalog: getDifficultyCatalog,
   createStageData: createStageData
 };
