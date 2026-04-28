@@ -54,6 +54,7 @@ Project-specific features, controls, and implementation details are documented i
 
 ## Documentation
 
+- [WeChat Backend and Auth Guide](./WECHAT_BACKEND_AND_AUTH_GUIDE.md)
 - [plane-game README](./plane-game/README.md)
 - [plane-game2 README](./plane-game2/README.md)
 - [defense-game README](./defense-game/README.md)
