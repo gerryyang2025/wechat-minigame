@@ -14,16 +14,6 @@ It uses the WeChat minigame open data context flow:
 4. The open data context renders the list into `sharedCanvas`.
 5. The main domain draws `sharedCanvas` inside the leaderboard panel.
 
-This matches the in-game leaderboard path described by the WeChat official ranklist guide:
-
-- `wx.setUserCloudStorage()` uploads the current player's score
-- `wx.getFriendCloudStorage()` reads friend scores inside the open data context
-- the open data context renders the result into `sharedCanvas`
-
-Official reference:
-
-- https://developers.weixin.qq.com/minigame/dev/guide/open-ability/ranklist.html
-
 ## Data Flow Diagram
 
 ```text
@@ -95,7 +85,6 @@ Relevant files:
 Key runtime steps:
 
 - `syncCloudLeaderboard()` writes `plane_best_score` with `wx.setUserCloudStorage()`
-- startup now proactively syncs the locally stored best score when it is greater than `0`
 - `openLeaderboard('friends')` proactively syncs the current best score, then switches the overlay into friend mode
 - `postOpenDataMessage('showFriendLeaderboard', ...)` passes the layout size and score key to the subdomain
 - `ctx.drawImage(this.sharedCanvas, ...)` paints the rendered friend list into the leaderboard panel
@@ -147,32 +136,10 @@ Relevant files:
 
 Key subdomain steps:
 
-- `setCanvasSize(...)` sets the logical layout size, updates the shared-canvas backing size, and applies the internal render scale
+- `setCanvasSize(...)` sets the logical layout size and internal render scale
 - `loadFriendData()` calls `wx.getFriendCloudStorage()`
 - `normalizeRecords(...)` extracts and sorts the cloud-storage values
 - `render()` draws the current leaderboard state into the shared canvas
-
-## Relationship To WeChat Ranklist Configuration
-
-The official ranklist guide also covers a second layer beyond the in-game friend panel:
-
-- WeChat Search ranking display
-- social-component ranking display
-- rank interaction notifications after the relevant subscription is enabled
-
-Those surfaces do not become active from code alone. They additionally require:
-
-1. uploading the score with the same hosted-data key
-2. configuring the rank entry in the WeChat minigame admin console
-3. passing WeChat review for that configuration
-
-For `plane-game2`, the runtime already handles step `1` with:
-
-- key: `plane_best_score`
-- order: descending
-- data type: integer score
-
-The remaining admin-console configuration is still a manual publishing step outside this repository.
 
 ## Why a Friend Leaderboard Can Look Empty
 

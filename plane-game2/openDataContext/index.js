@@ -57,6 +57,10 @@ function trySetCanvasDimension(targetCanvas, key, value) {
     return false;
   }
 
+  if (typeof sharedCanvas !== 'undefined' && targetCanvas === sharedCanvas) {
+    return false;
+  }
+
   try {
     targetCanvas[key] = value;
     return true;
@@ -351,14 +355,14 @@ function renderMessage(message, subMessage) {
 }
 
 function render() {
-  var padding = 12;
+  var padding = 10;
   var listX = padding;
-  var listY = 56;
+  var listY = 10;
   var listWidth = state.width - padding * 2;
   var footerHeight = 46;
-  var footerY = state.height - footerHeight - 8;
+  var footerY = state.height - footerHeight - 4;
   var noteWidth = Math.min(136, listWidth);
-  var availableListHeight = Math.max(36, footerY - listY - 12);
+  var availableListHeight = Math.max(36, footerY - listY - 8);
   var rowGap = 6;
   var rowHeight = Math.max(28, Math.min(34, (availableListHeight - (Math.max(0, state.records.length - 1) * rowGap)) / Math.max(1, state.records.length)));
 
@@ -367,18 +371,6 @@ function render() {
   }
 
   ctx.clearRect(0, 0, state.width, state.height);
-  drawBackground();
-
-  ctx.save();
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'middle';
-  ctx.fillStyle = INK;
-  setFont(18, 'bold');
-  ctx.fillText(state.title || '好友排行', padding, 26);
-  ctx.fillStyle = SOFT_INK;
-  setFont(11, null);
-  ctx.fillText('开放数据域同玩好友分数', padding + 1, 43);
-  ctx.restore();
 
   if (state.errorMessage) {
     renderMessage(state.errorMessage, state.errorDetail || '请稍后重新打开好友排行');
@@ -406,7 +398,7 @@ function render() {
   ctx.textBaseline = 'middle';
   ctx.fillStyle = SOFT_INK;
   setFont(11, null);
-  ctx.fillText('排行榜按托管分数从高到低排列', padding + 2, footerY + 20);
+  ctx.fillText('开放数据域好友分数', padding + 2, footerY + 20);
   ctx.restore();
 }
 
