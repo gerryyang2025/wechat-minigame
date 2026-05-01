@@ -9,6 +9,7 @@ var powerUpStyles = require('./powerup-style');
 
 var STORAGE_KEY = 'plane-game2-best-score';
 var LEADERBOARD_KEY = 'plane-game2-leaderboard';
+var FRIEND_LEADERBOARD_SCORE_KEY = 'plane_best_score';
 var PAPER_LIGHT = '#f8f3e8';
 var PAPER_MID = '#ebe2d3';
 var PAPER_DARK = '#d9cfbf';
@@ -532,6 +533,7 @@ function PlaneMinigameRuntime(options) {
   this.friendRankDirty = false;
   this.friendRankError = '';
   this.friendRankRect = null;
+  this.lastSyncedCloudBestScore = null;
   this.survivalTime = 0;
   this.spawnTimer = 0;
   this.waveCount = 0;
@@ -589,6 +591,7 @@ PlaneMinigameRuntime.prototype.init = function () {
   }
 
   this.setupOpenDataContext();
+  this.syncCloudLeaderboard();
   this.audio.init();
   this.audio.updateSettings(this.userSettings);
   this.loadAssets();
@@ -603,8 +606,8 @@ PlaneMinigameRuntime.prototype.setupOpenDataContext = function () {
 
   try {
     this.openDataContext = wx.getOpenDataContext();
-    this.sharedCanvas = this.openDataContext && this.openDataContext.canvas
-      ? this.openDataContext.canvas
+    this.sharedCanvas = this.openDataContext && (this.openDataContext.canvas || this.openDataContext.sharedCanvas)
+      ? (this.openDataContext.canvas || this.openDataContext.sharedCanvas)
       : null;
     this.friendRankSupported = !!(this.openDataContext && this.sharedCanvas);
   } catch (error) {
@@ -1028,21 +1031,40 @@ PlaneMinigameRuntime.prototype.postOpenDataMessage = function (type, data) {
 };
 
 PlaneMinigameRuntime.prototype.syncCloudLeaderboard = function () {
+  var self = this;
+  var scoreToSync;
+
   if (!wx.setUserCloudStorage) {
     return;
   }
+
+  if (this.bestScore <= 0 || this.lastSyncedCloudBestScore === this.bestScore) {
+    return;
+  }
+
+  scoreToSync = this.bestScore;
 
   try {
     wx.setUserCloudStorage({
       KVDataList: [
         {
-          key: 'plane_best_score',
-          value: String(this.bestScore)
+          key: FRIEND_LEADERBOARD_SCORE_KEY,
+          value: String(scoreToSync)
         }
-      ]
+      ],
+      success: function () {
+        self.lastSyncedCloudBestScore = scoreToSync;
+      },
+      fail: function (err) {
+        if (typeof console !== 'undefined' && console.error) {
+          console.error('[PlaneMinigameRuntime] wx.setUserCloudStorage failed', err);
+        }
+      }
     });
   } catch (error) {
-    return;
+    if (typeof console !== 'undefined' && console.error) {
+      console.error('[PlaneMinigameRuntime] wx.setUserCloudStorage threw', error);
+    }
   }
 };
 
@@ -3015,7 +3037,7 @@ PlaneMinigameRuntime.prototype.renderLeaderboard = function (ctx) {
         width: Math.round(contentWidth),
         height: Math.round(contentHeight),
         pixelRatio: this.pixelRatio,
-        scoreKey: 'plane_best_score',
+        scoreKey: FRIEND_LEADERBOARD_SCORE_KEY,
         title: '好友排行',
         selfScore: this.bestScore
       });
