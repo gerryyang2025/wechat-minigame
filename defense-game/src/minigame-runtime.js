@@ -20,7 +20,7 @@ var PATH_COLOR = '#d8b185';
 var FLOOR_COLOR = '#f8ebd7';
 var SLOT_IDLE = 'rgba(125, 91, 54, 0.12)';
 var SLOT_ACTIVE = 'rgba(255, 176, 92, 0.22)';
-var STORAGE_BEST_WAVES = 'defense_game_best_waves_v2';
+var STORAGE_BEST_WAVES = 'defense_game_best_waves_v3';
 var STORAGE_AUDIO_SETTINGS = 'defense_game_audio_settings_v1';
 
 function DefenseMinigameRuntime(options) {
@@ -43,6 +43,7 @@ function DefenseMinigameRuntime(options) {
   this.stage = null;
   this.towers = [];
   this.enemies = [];
+  this.enemyProjectiles = [];
   this.projectiles = [];
   this.selectedTowerKey = '';
   this.selectedPlacedTowerId = '';
@@ -244,34 +245,43 @@ DefenseMinigameRuntime.prototype.getStageViewportMetrics = function () {
 };
 
 DefenseMinigameRuntime.prototype.getSnapshot = function () {
-  var currentWave = this.activeWaveNumber;
-
-  if (!currentWave && this.stage && this.stage.waves && this.stage.waves.length) {
-    currentWave = Math.min(this.clearedWaveCount + 1, this.stage.waves.length);
-  }
-
   return {
     state: this.state,
-    wave: currentWave,
+    wave: this.getDisplayedWaveNumber(),
     lives: this.lives,
     stageKey: this.stage ? this.stage.key : this.selectedStageKey,
     difficultyKey: this.stage ? this.stage.difficultyKey : this.selectedDifficultyKey
   };
 };
 
+DefenseMinigameRuntime.prototype.getDisplayedWaveNumber = function () {
+  if (!this.stage || !this.stage.waves || !this.stage.waves.length) {
+    return 0;
+  }
+
+  if (this.waveInProgress) {
+    return this.activeWaveNumber;
+  }
+
+  if (this.waveCursor >= this.stage.waves.length) {
+    return this.stage.waves.length;
+  }
+
+  return this.waveCursor;
+};
+
 DefenseMinigameRuntime.prototype.normalizeBestWaves = function (value) {
   var map = {};
   var source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  var maxWave = content.STAGE_WAVE_COUNT;
 
   content.STAGE_ORDER.forEach(function (stageKey) {
     content.DIFFICULTY_ORDER.forEach(function (difficultyKey) {
       var storageKey = stageKey + '::' + difficultyKey;
-      var legacyValue = difficultyKey === content.DEFAULT_DIFFICULTY_KEY ? source[stageKey] : undefined;
       var exactValue = source[storageKey];
+      var normalizedValue = typeof exactValue === 'number' ? exactValue : 0;
 
-      map[storageKey] = typeof exactValue === 'number'
-        ? exactValue
-        : (typeof legacyValue === 'number' ? legacyValue : 0);
+      map[storageKey] = Math.max(0, Math.min(maxWave, normalizedValue));
     });
   });
 
@@ -379,6 +389,7 @@ DefenseMinigameRuntime.prototype.startGame = function () {
   );
   this.towers = [];
   this.enemies = [];
+  this.enemyProjectiles = [];
   this.projectiles = [];
   this.selectedTowerKey = 'tabby';
   this.selectedPlacedTowerId = '';
@@ -423,6 +434,7 @@ DefenseMinigameRuntime.prototype.resumeGame = function () {
 DefenseMinigameRuntime.prototype.returnToTitle = function () {
   this.state = 'title';
   this.stage = null;
+  this.enemyProjectiles = [];
   this.selectedPlacedTowerId = '';
   this.selectedTowerKey = '';
   this.feedbackMarks = [];
@@ -572,6 +584,10 @@ DefenseMinigameRuntime.prototype.handleTouchStart = function (event) {
   if (this.selectedPlacedTowerId) {
     if (utils.pointInRect(point.x, point.y, this.touchRects.upgradeButton)) {
       this.tryUpgradeTower(this.selectedPlacedTowerId);
+      return;
+    }
+    if (utils.pointInRect(point.x, point.y, this.touchRects.repairButton)) {
+      this.tryRepairTower(this.selectedPlacedTowerId);
       return;
     }
     if (utils.pointInRect(point.x, point.y, this.touchRects.sellButton)) {
@@ -735,7 +751,13 @@ DefenseMinigameRuntime.prototype.tryPlaceTower = function (point) {
     level: 1,
     x: slot.x,
     y: slot.y,
-    cooldownMs: 0
+    cooldownMs: 0,
+    maxDurability: this.getTowerMaxDurabilityForLevel(towerType, 1),
+    durability: this.getTowerMaxDurabilityForLevel(towerType, 1),
+    isBroken: false,
+    brokenUntil: 0,
+    autoRecoverRatio: 0,
+    statusEffects: this.createTowerStatusState()
   });
   this.selectedPlacedTowerId = towerId;
   this.showHint(towerType.name + ' 已就位', 850);
@@ -767,7 +789,15 @@ DefenseMinigameRuntime.prototype.tryUpgradeTower = function (towerId) {
     return;
   }
 
+  this.ensureTowerDurabilityState(tower);
+  if (tower.isBroken) {
+    this.showHint('先修复猫塔', 900);
+    return;
+  }
+
   this.gold -= cost;
+  tower.maxDurability = this.getTowerMaxDurabilityForLevel(towerType, tower.level + 1);
+  tower.durability = Math.min(tower.maxDurability, tower.durability + Math.max(10, tower.maxDurability - this.getTowerMaxDurabilityForLevel(towerType, tower.level)));
   tower.level += 1;
   this.showHint(towerType.name + ' 升到 Lv.' + tower.level, 850);
   this.audio.playSfx('towerUpgrade');
@@ -805,6 +835,230 @@ DefenseMinigameRuntime.prototype.findTowerById = function (towerId) {
     }
   }
   return null;
+};
+
+DefenseMinigameRuntime.prototype.createTowerStatusState = function () {
+  return {
+    jammedUntil: 0,
+    suppressedUntil: 0,
+    blindedUntil: 0,
+    markedUntil: 0
+  };
+};
+
+DefenseMinigameRuntime.prototype.getTowerTypeForLevel = function (typeKey) {
+  return this.stage ? this.stage.towerTypes[typeKey] : content.TOWER_TYPES[typeKey];
+};
+
+DefenseMinigameRuntime.prototype.getTowerMaxDurabilityForLevel = function (towerType, level) {
+  if (!towerType) {
+    return 100;
+  }
+
+  if (level <= 1) {
+    return towerType.durability || 100;
+  }
+
+  return towerType.upgradeDurability[level - 2] || towerType.durability || 100;
+};
+
+DefenseMinigameRuntime.prototype.ensureTowerDurabilityState = function (tower) {
+  var towerType;
+
+  if (!tower) {
+    return null;
+  }
+
+  towerType = this.getTowerTypeForLevel(tower.typeKey);
+  if (!tower.maxDurability) {
+    tower.maxDurability = this.getTowerMaxDurabilityForLevel(towerType, tower.level || 1);
+  }
+  if (tower.durability === undefined || tower.durability === null) {
+    tower.durability = tower.maxDurability;
+  }
+  if (!tower.statusEffects) {
+    tower.statusEffects = this.createTowerStatusState();
+  }
+  if (tower.isBroken === undefined) {
+    tower.isBroken = false;
+  }
+  if (tower.brokenUntil === undefined) {
+    tower.brokenUntil = 0;
+  }
+
+  return tower;
+};
+
+DefenseMinigameRuntime.prototype.getTowerStatusSnapshot = function (tower, now) {
+  var status = this.ensureTowerDurabilityState(tower).statusEffects;
+  var currentTime = now === undefined ? Date.now() : now;
+
+  return {
+    jammed: status.jammedUntil > currentTime,
+    suppressed: status.suppressedUntil > currentTime,
+    blinded: status.blindedUntil > currentTime,
+    marked: status.markedUntil > currentTime
+  };
+};
+
+DefenseMinigameRuntime.prototype.getTowerRepairCost = function (tower) {
+  var towerType = this.getTowerTypeForLevel(tower.typeKey);
+  var multiplier = this.stage && this.stage.difficulty ? (this.stage.difficulty.towerRepairCostMultiplier || 1) : 1;
+  return Math.max(8, Math.round((towerType.repairCostRatio || 0.25) * towerType.cost * multiplier));
+};
+
+DefenseMinigameRuntime.prototype.getTowerCooldownRecoveryMultiplier = function (tower, now) {
+  return this.getTowerStatusSnapshot(tower, now).suppressed ? 0.72 : 1;
+};
+
+DefenseMinigameRuntime.prototype.getTowerRangeMultiplier = function (tower, now) {
+  return this.getTowerStatusSnapshot(tower, now).blinded ? 0.8 : 1;
+};
+
+DefenseMinigameRuntime.prototype.clearTowerStatuses = function (tower) {
+  if (!tower) {
+    return;
+  }
+  tower.statusEffects = this.createTowerStatusState();
+};
+
+DefenseMinigameRuntime.prototype.restoreTowerToFull = function (tower) {
+  if (!tower) {
+    return;
+  }
+
+  this.ensureTowerDurabilityState(tower);
+  tower.maxDurability = this.getTowerMaxDurabilityForLevel(this.getTowerTypeForLevel(tower.typeKey), tower.level);
+  tower.durability = tower.maxDurability;
+  tower.isBroken = false;
+  tower.brokenUntil = 0;
+  this.clearTowerStatuses(tower);
+};
+
+DefenseMinigameRuntime.prototype.breakTower = function (tower, now) {
+  var recoverRatio = this.stage && this.stage.difficulty ? (this.stage.difficulty.towerAutoRecoverRatio || 0.35) : 0.35;
+
+  this.ensureTowerDurabilityState(tower);
+  if (tower.isBroken) {
+    return;
+  }
+
+  tower.isBroken = true;
+  tower.brokenUntil = (now === undefined ? Date.now() : now) + 3900;
+  tower.durability = 0;
+  tower.cooldownMs = Math.max(tower.cooldownMs || 0, 900);
+  tower.autoRecoverRatio = recoverRatio;
+  this.clearTowerStatuses(tower);
+  this.pushFeedbackMark('towerBreak', tower.x, tower.y, {
+    radius: 22 * this.scale,
+    tint: DANGER,
+    lifetime: 0.55
+  });
+  this.showHint('警报：' + this.getTowerTypeForLevel(tower.typeKey).name + ' 被打坏了', 1050);
+};
+
+DefenseMinigameRuntime.prototype.updateTowerRecoveryState = function (tower, now) {
+  this.ensureTowerDurabilityState(tower);
+  if (tower.isBroken && tower.brokenUntil <= now) {
+    tower.maxDurability = this.getTowerMaxDurabilityForLevel(this.getTowerTypeForLevel(tower.typeKey), tower.level);
+    tower.durability = Math.max(1, Math.round(tower.maxDurability * (tower.autoRecoverRatio || 0.35)));
+    tower.isBroken = false;
+    tower.brokenUntil = 0;
+    tower.cooldownMs = Math.max(tower.cooldownMs || 0, 400);
+    tower.autoRecoverRatio = 0;
+    this.pushFeedbackMark('towerRepair', tower.x, tower.y, {
+      radius: 18 * this.scale,
+      tint: SUCCESS,
+      lifetime: 0.48
+    });
+  }
+};
+
+DefenseMinigameRuntime.prototype.applyStatusesToTower = function (tower, statusEffects, now) {
+  var currentTime = now === undefined ? Date.now() : now;
+  var status;
+
+  if (!tower || !statusEffects || !statusEffects.length) {
+    return;
+  }
+
+  status = this.ensureTowerDurabilityState(tower).statusEffects;
+  statusEffects.forEach(function (effect) {
+    var until = currentTime + Math.max(180, effect.durationMs || 0);
+
+    if (effect.type === 'jammed') {
+      status.jammedUntil = Math.max(status.jammedUntil, until);
+    } else if (effect.type === 'suppressed') {
+      status.suppressedUntil = Math.max(status.suppressedUntil, until);
+    } else if (effect.type === 'blinded') {
+      status.blindedUntil = Math.max(status.blindedUntil, until);
+    } else if (effect.type === 'marked') {
+      status.markedUntil = Math.max(status.markedUntil, until);
+    }
+  });
+};
+
+DefenseMinigameRuntime.prototype.applyDamageToTower = function (tower, damage, statusEffects, now, tint) {
+  var actualDamage;
+  var statusSnapshot;
+
+  if (!tower) {
+    return false;
+  }
+
+  this.ensureTowerDurabilityState(tower);
+  if (tower.isBroken) {
+    return false;
+  }
+
+  statusSnapshot = this.getTowerStatusSnapshot(tower, now);
+  actualDamage = Math.max(1, Math.round(damage * (statusSnapshot.marked ? 1.25 : 1)));
+  tower.durability = Math.max(0, tower.durability - actualDamage);
+  this.applyStatusesToTower(tower, statusEffects, now);
+  this.pushFeedbackMark('towerHit', tower.x, tower.y, {
+    radius: 14 * this.scale,
+    tint: tint || DANGER,
+    lifetime: 0.26
+  });
+
+  if (tower.durability <= 0) {
+    this.breakTower(tower, now);
+  }
+
+  return true;
+};
+
+DefenseMinigameRuntime.prototype.tryRepairTower = function (towerId) {
+  var tower = this.findTowerById(towerId);
+  var cost;
+  var towerType;
+
+  if (!tower) {
+    return;
+  }
+
+  this.ensureTowerDurabilityState(tower);
+  if (!tower.isBroken && tower.durability >= tower.maxDurability) {
+    this.showHint('当前耐久完好', 850);
+    return;
+  }
+
+  cost = this.getTowerRepairCost(tower);
+  if (this.gold < cost) {
+    this.showHint('小鱼干不足', 900);
+    return;
+  }
+
+  towerType = this.getTowerTypeForLevel(tower.typeKey);
+  this.gold -= cost;
+  this.restoreTowerToFull(tower);
+  this.pushFeedbackMark('towerRepair', tower.x, tower.y, {
+    radius: 18 * this.scale,
+    tint: SUCCESS,
+    lifetime: 0.42
+  });
+  this.showHint(towerType.name + ' 已修复', 850);
+  this.audio.playSfx('towerUpgrade');
 };
 
 DefenseMinigameRuntime.prototype.getWaveSummary = function (waveIndex) {
@@ -846,6 +1100,8 @@ DefenseMinigameRuntime.prototype.getTowerActionSummary = function (tower) {
   var totalSpent = towerType.cost;
   var i;
 
+  this.ensureTowerDurabilityState(tower);
+
   for (i = 0; i < tower.level - 1; i += 1) {
     totalSpent += towerType.upgradeCosts[i] || 0;
   }
@@ -857,7 +1113,11 @@ DefenseMinigameRuntime.prototype.getTowerActionSummary = function (tower) {
     nextCost: nextCost,
     damageGain: Math.max(0, nextDamage - currentStats.damage),
     rangeGain: Math.max(0, Math.round(nextRange - currentStats.range)),
-    refund: Math.round(totalSpent * 0.7)
+    refund: Math.round(totalSpent * 0.7),
+    repairCost: this.getTowerRepairCost(tower),
+    durability: Math.round(tower.durability || currentStats.maxDurability || 0),
+    maxDurability: Math.round(tower.maxDurability || this.getTowerMaxDurabilityForLevel(towerType, tower.level)),
+    needsRepair: !!tower.isBroken || (tower.durability || 0) < (tower.maxDurability || 0)
   };
 };
 
@@ -906,8 +1166,9 @@ DefenseMinigameRuntime.prototype.update = function (dt, now) {
 
   this.elapsedTime += dt;
   this.updateWaveFlow(dt);
-  this.updateEnemies(dt);
-  this.updateTowers(dt);
+  this.updateEnemies(dt, now);
+  this.updateEnemyProjectiles(dt, now);
+  this.updateTowers(dt, now);
   this.updateProjectiles(dt);
   this.cleanupDefeatedEnemies();
   this.updateFeedbackMarks(dt);
@@ -940,7 +1201,7 @@ DefenseMinigameRuntime.prototype.updateWaveFlow = function (dt) {
     this.pendingSpawns[0].delayRemaining -= dtMs;
     while (this.pendingSpawns.length > 0 && this.pendingSpawns[0].delayRemaining <= 0) {
       nextSpawn = this.pendingSpawns.shift();
-      this.spawnEnemy(nextSpawn.type);
+      this.spawnEnemy(nextSpawn.type, nextSpawn);
       if (this.pendingSpawns.length > 0) {
         this.pendingSpawns[0].delayRemaining += nextSpawn.delayRemaining;
       }
@@ -949,7 +1210,7 @@ DefenseMinigameRuntime.prototype.updateWaveFlow = function (dt) {
 
   if (this.pendingSpawns.length === 0 && this.enemies.length === 0) {
     this.waveInProgress = false;
-    this.clearedWaveCount = Math.max(this.clearedWaveCount, this.activeWaveNumber);
+    this.clearedWaveCount = Math.max(this.clearedWaveCount, this.activeWaveNumber + 1);
     if (this.waveCursor < this.stage.waves.length) {
       this.showBanner('第 ' + this.activeWaveNumber + ' 波清场', '准备下一波防守', 1500);
     } else {
@@ -966,12 +1227,16 @@ DefenseMinigameRuntime.prototype.startWave = function (waveIndex) {
   var summary = this.getWaveSummary(waveIndex);
   this.waveInProgress = true;
   this.waveCursor = waveIndex + 1;
-  this.activeWaveNumber = this.waveCursor;
+  this.activeWaveNumber = waveIndex;
   this.waveThreatShown = {};
   this.pendingSpawns = wave.spawns.map(function (spawn) {
     return {
       type: spawn.type,
-      delayRemaining: spawn.delay
+      delayRemaining: spawn.delay,
+      waveIndex: waveIndex,
+      attackPressureMultiplier: wave.attackPressureMultiplier || 1,
+      attackCadenceMultiplier: wave.attackCadenceMultiplier || 1,
+      statusPressureMultiplier: wave.statusPressureMultiplier || 1
     };
   });
   this.showBanner(wave.label + ' 来袭', summary || '准备拦住所有敌人', 1800);
@@ -982,12 +1247,51 @@ DefenseMinigameRuntime.prototype.spawnEnemy = function (typeKey, spawnOptions) {
   var enemyType = this.stage.enemyTypes[typeKey];
   var startPoint = this.stage.path[0];
   var id = 'enemy-' + this.nextEntityId;
+  var basicAttackProfile;
+  var skillAttackProfile;
   var size;
   var centerX;
   var centerY;
   var spawnData = spawnOptions || {};
+  var createRuntimeAttackProfile = function (profile) {
+    var runtimeProfile;
+    var pressureMultiplier;
+    var cadenceMultiplier;
+    var statusMultiplier;
+
+    if (!profile) {
+      return null;
+    }
+
+    pressureMultiplier = spawnData.attackPressureMultiplier || 1;
+    cadenceMultiplier = spawnData.attackCadenceMultiplier || 1;
+    statusMultiplier = spawnData.statusPressureMultiplier || 1;
+    runtimeProfile = JSON.parse(JSON.stringify(profile));
+    runtimeProfile.damage = Math.max(0, Math.round((runtimeProfile.damage || 0) * pressureMultiplier));
+    runtimeProfile.cooldownMs = Math.max(420, Math.round((runtimeProfile.cooldownMs || 1600) / cadenceMultiplier));
+    runtimeProfile.windupMs = Math.max(120, Math.round(runtimeProfile.windupMs || 220));
+    runtimeProfile.recoveryMs = Math.max(120, Math.round(runtimeProfile.recoveryMs || 220));
+    runtimeProfile.splashRadius = Math.max(0, Math.round((runtimeProfile.splashRadius || 0) * this.scale));
+    runtimeProfile.radius = Math.max(0, Math.round((runtimeProfile.radius || 0) * this.scale));
+    runtimeProfile.range = (runtimeProfile.range || 0) * this.scale;
+    runtimeProfile.engagementRadius = (runtimeProfile.engagementRadius || runtimeProfile.range || 0) * this.scale;
+    runtimeProfile.projectileSpeed = (runtimeProfile.projectileSpeed || 0) * this.scale;
+    if (runtimeProfile.initialCooldownMs) {
+      runtimeProfile.initialCooldownMs = Math.max(0, Math.round(runtimeProfile.initialCooldownMs / cadenceMultiplier));
+    }
+    if (runtimeProfile.statusEffects && runtimeProfile.statusEffects.length) {
+      runtimeProfile.statusEffects = runtimeProfile.statusEffects.map(function (effect) {
+        var clone = JSON.parse(JSON.stringify(effect));
+        clone.durationMs = Math.max(220, Math.round((clone.durationMs || 0) * statusMultiplier));
+        return clone;
+      });
+    }
+    return runtimeProfile;
+  }.bind(this);
 
   this.nextEntityId += 1;
+  basicAttackProfile = createRuntimeAttackProfile(enemyType.attackProfile);
+  skillAttackProfile = createRuntimeAttackProfile(enemyType.skillProfile);
   size = enemyType.size * this.scale;
   centerX = spawnData.centerX !== undefined ? spawnData.centerX : startPoint.x;
   centerY = spawnData.centerY !== undefined ? spawnData.centerY : startPoint.y;
@@ -1023,6 +1327,17 @@ DefenseMinigameRuntime.prototype.spawnEnemy = function (typeKey, spawnOptions) {
     summonOnEnrage: enemyType.summonOnEnrage || null,
     enrageTriggered: false,
     isEnraged: false,
+    attackProfile: basicAttackProfile,
+    skillProfile: skillAttackProfile,
+    attackCooldownMs: basicAttackProfile && basicAttackProfile.initialCooldownMs ? basicAttackProfile.initialCooldownMs : 0,
+    skillCooldownMs: skillAttackProfile && skillAttackProfile.initialCooldownMs ? skillAttackProfile.initialCooldownMs : Math.round((skillAttackProfile && skillAttackProfile.cooldownMs ? skillAttackProfile.cooldownMs : 0) * 0.55),
+    attackState: 'moving',
+    attackStateRemainingMs: 0,
+    activeAttackProfile: null,
+    activeAttackTargetId: '',
+    activeAttackTargetX: centerX,
+    activeAttackTargetY: centerY,
+    activeAttackIsSkill: false,
     isDead: false
   });
   if (!spawnData.skipThreatCue) {
@@ -1031,23 +1346,15 @@ DefenseMinigameRuntime.prototype.spawnEnemy = function (typeKey, spawnOptions) {
 };
 
 DefenseMinigameRuntime.prototype.showEnemyThreatCue = function (typeKey) {
+  var enemyType = this.stage && this.stage.enemyTypes ? this.stage.enemyTypes[typeKey] : null;
+
   if (this.waveThreatShown[typeKey]) {
     return;
   }
 
-  if (typeKey === 'vacuum') {
+  if (enemyType && enemyType.cueTitle) {
     this.waveThreatShown[typeKey] = true;
-    this.showBanner(
-      '重甲敌人出现',
-      this.stage && this.stage.key === 'kitchen_loop' ? '装甲会挡伤，减速效果也会变弱' : '优先集火，装甲打碎后更容易处理',
-      1450
-    );
-    return;
-  }
-
-  if (typeKey === 'mailman') {
-    this.waveThreatShown[typeKey] = true;
-    this.showBanner('首领进入路线', '半血后会狂暴，还会召来增援', 1650);
+    this.showBanner(enemyType.cueTitle, enemyType.cueDetail || '准备拦住它', enemyType.cueDurationMs || 1550);
   }
 };
 
@@ -1074,46 +1381,69 @@ DefenseMinigameRuntime.prototype.getEnemySlowFactor = function (enemy, now) {
 };
 
 DefenseMinigameRuntime.prototype.activateEnemySprint = function (enemy) {
+  var enemyType;
+  var cueKey;
+  var tint;
+
   if (!enemy || enemy.sprintTriggered || !enemy.sprintDurationMs) {
     return;
   }
 
   enemy.sprintTriggered = true;
   enemy.sprintUntil = Date.now() + enemy.sprintDurationMs;
+  enemyType = this.stage && this.stage.enemyTypes ? this.stage.enemyTypes[enemy.typeKey] : null;
+  cueKey = enemy.typeKey + ':sprint';
+  tint = enemyType && enemyType.tint ? enemyType.tint : '#6bc36a';
   this.pushFeedbackMark('enemyBuff', enemy.x + enemy.width / 2, enemy.y + enemy.height / 2, {
     radius: Math.max(18 * this.scale, enemy.width * 0.65),
-    tint: '#6bc36a',
+    tint: tint,
     lifetime: 0.42
   });
 
-  if (!this.waveThreatShown.cucumberSprint) {
-    this.waveThreatShown.cucumberSprint = true;
-    this.showBanner('黄瓜怪冲刺', '接近后段路线时会突然提速', 1350);
+  if (!this.waveThreatShown[cueKey]) {
+    this.waveThreatShown[cueKey] = true;
+    this.showBanner(
+      enemyType && enemyType.sprintCueTitle ? enemyType.sprintCueTitle : '敌人冲刺',
+      enemyType && enemyType.sprintCueDetail ? enemyType.sprintCueDetail : '它突然提速，快补后场火力',
+      1400
+    );
   }
 };
 
 DefenseMinigameRuntime.prototype.breakEnemyArmor = function (enemy) {
+  var enemyType;
+  var cueKey;
+  var tint;
+
   if (!enemy || enemy.armorBroken || !enemy.armor) {
     return;
   }
 
   enemy.armorBroken = true;
+  enemyType = this.stage && this.stage.enemyTypes ? this.stage.enemyTypes[enemy.typeKey] : null;
+  cueKey = enemy.typeKey + ':armorBreak';
+  tint = enemyType && enemyType.tint ? enemyType.tint : '#8ca2d8';
   this.pushFeedbackMark('enemyArmorBreak', enemy.x + enemy.width / 2, enemy.y + enemy.height / 2, {
     radius: Math.max(18 * this.scale, enemy.width * 0.72),
-    tint: '#8ca2d8',
+    tint: tint,
     lifetime: 0.5
   });
 
-  if (!this.waveThreatShown.vacuumArmorBreak) {
-    this.waveThreatShown.vacuumArmorBreak = true;
-    this.showHint('吸尘器装甲裂开了，快补火力', 1050);
+  if (!this.waveThreatShown[cueKey]) {
+    this.waveThreatShown[cueKey] = true;
+    this.showHint(
+      enemyType && enemyType.armorBreakHint ? enemyType.armorBreakHint : '装甲裂开了，快补火力',
+      1080
+    );
   }
 };
 
 DefenseMinigameRuntime.prototype.triggerEnemyEnrage = function (enemy) {
+  var enemyType = this.stage && this.stage.enemyTypes ? this.stage.enemyTypes[enemy.typeKey] : null;
   var summonList = enemy && enemy.summonOnEnrage ? enemy.summonOnEnrage : null;
   var self = this;
   var spawnIndex = 0;
+  var tint;
 
   if (!enemy || enemy.enrageTriggered) {
     return;
@@ -1121,9 +1451,10 @@ DefenseMinigameRuntime.prototype.triggerEnemyEnrage = function (enemy) {
 
   enemy.enrageTriggered = true;
   enemy.isEnraged = true;
+  tint = enemyType && enemyType.tint ? enemyType.tint : '#ef7b6d';
   this.pushFeedbackMark('enemyBuff', enemy.x + enemy.width / 2, enemy.y + enemy.height / 2, {
     radius: Math.max(22 * this.scale, enemy.width * 0.82),
-    tint: '#ef7b6d',
+    tint: tint,
     lifetime: 0.58
   });
 
@@ -1140,6 +1471,10 @@ DefenseMinigameRuntime.prototype.triggerEnemyEnrage = function (enemy) {
           centerY: enemy.y + enemy.height / 2 + offsetY,
           waypointIndex: enemy.waypointIndex,
           progress: Math.max(0, enemy.progress - 6 * self.scale),
+          waveIndex: self.activeWaveNumber,
+          attackPressureMultiplier: self.stage && self.stage.waves[self.activeWaveNumber] ? self.stage.waves[self.activeWaveNumber].attackPressureMultiplier : 1,
+          attackCadenceMultiplier: self.stage && self.stage.waves[self.activeWaveNumber] ? self.stage.waves[self.activeWaveNumber].attackCadenceMultiplier : 1,
+          statusPressureMultiplier: self.stage && self.stage.waves[self.activeWaveNumber] ? self.stage.waves[self.activeWaveNumber].statusPressureMultiplier : 1,
           skipThreatCue: true
         });
         spawnIndex += 1;
@@ -1147,7 +1482,11 @@ DefenseMinigameRuntime.prototype.triggerEnemyEnrage = function (enemy) {
     });
   }
 
-  this.showBanner('邮差狂暴', '提速冲线，并叫来了增援', 1550);
+  this.showBanner(
+    enemyType && enemyType.enrageCueTitle ? enemyType.enrageCueTitle : '敌人狂暴',
+    enemyType && enemyType.enrageCueDetail ? enemyType.enrageCueDetail : '它正在强行冲线',
+    1500
+  );
 };
 
 DefenseMinigameRuntime.prototype.isEnemyPressuringTarget = function (enemy) {
@@ -1161,9 +1500,314 @@ DefenseMinigameRuntime.prototype.isTargetUnderPressure = function () {
   });
 };
 
-DefenseMinigameRuntime.prototype.updateEnemies = function (dt) {
+DefenseMinigameRuntime.prototype.countTowersNearPoint = function (x, y, radius, excludeTowerId) {
+  var radiusSq = radius * radius;
+  var count = 0;
+
+  this.towers.forEach(function (tower) {
+    if (excludeTowerId && tower.id === excludeTowerId) {
+      return;
+    }
+    if (tower.isBroken) {
+      return;
+    }
+    if (utils.distanceSquared(x, y, tower.x, tower.y) <= radiusSq) {
+      count += 1;
+    }
+  });
+
+  return count;
+};
+
+DefenseMinigameRuntime.prototype.getTowersInRadius = function (x, y, radius) {
+  var radiusSq = radius * radius;
+
+  return this.towers.filter(function (tower) {
+    return !tower.isBroken && utils.distanceSquared(x, y, tower.x, tower.y) <= radiusSq;
+  });
+};
+
+DefenseMinigameRuntime.prototype.findEnemyAttackTarget = function (enemy, profile) {
+  var bestTower = null;
+  var bestScore = -Infinity;
+  var radiusSq;
+  var mode;
+  var self = this;
+
+  if (!profile) {
+    return null;
+  }
+
+  radiusSq = (profile.engagementRadius || profile.range || 0) * (profile.engagementRadius || profile.range || 0);
+  mode = profile.targetMode || 'nearest';
+
+  this.towers.forEach(function (tower) {
+    var distanceSq;
+    var score;
+    var status;
+
+    self.ensureTowerDurabilityState(tower);
+    if (tower.isBroken) {
+      return;
+    }
+
+    distanceSq = utils.distanceSquared(enemy.x + enemy.width / 2, enemy.y + enemy.height / 2, tower.x, tower.y);
+    if (distanceSq > radiusSq) {
+      return;
+    }
+
+    if (mode === 'highestLevel') {
+      score = tower.level * 100000 - distanceSq;
+    } else if (mode === 'clustered') {
+      score = self.countTowersNearPoint(tower.x, tower.y, 72 * self.scale, tower.id) * 100000 - distanceSq;
+    } else if (mode === 'marked') {
+      status = self.getTowerStatusSnapshot(tower, Date.now());
+      score = (status.marked ? 200000 : 0) + tower.level * 1000 - distanceSq;
+    } else {
+      score = -distanceSq;
+    }
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestTower = tower;
+    }
+  });
+
+  return bestTower;
+};
+
+DefenseMinigameRuntime.prototype.showEnemyAttackCue = function (enemy, profile) {
+  var cueKey;
+
+  if (!profile || !profile.cueTitle) {
+    return;
+  }
+
+  cueKey = enemy.typeKey + ':attack:' + profile.cueTitle;
+  if (this.waveThreatShown[cueKey]) {
+    return;
+  }
+
+  this.waveThreatShown[cueKey] = true;
+  this.showBanner(profile.cueTitle, profile.cueDetail || '敌人正在针对猫塔发动技能', 1400);
+};
+
+DefenseMinigameRuntime.prototype.beginEnemyAttack = function (enemy, profile, targetTower, isSkill) {
+  if (!enemy || !profile) {
+    return false;
+  }
+
+  enemy.attackState = 'windup';
+  enemy.attackStateRemainingMs = profile.windupMs || 220;
+  enemy.activeAttackProfile = profile;
+  enemy.activeAttackTargetId = targetTower ? targetTower.id : '';
+  enemy.activeAttackTargetX = targetTower ? targetTower.x : (enemy.x + enemy.width / 2);
+  enemy.activeAttackTargetY = targetTower ? targetTower.y : (enemy.y + enemy.height / 2);
+  enemy.activeAttackIsSkill = !!isSkill;
+  if (isSkill) {
+    enemy.skillCooldownMs = profile.cooldownMs || 3200;
+    this.showEnemyAttackCue(enemy, profile);
+  } else {
+    enemy.attackCooldownMs = profile.cooldownMs || 1600;
+  }
+  this.pushFeedbackMark('enemyCast', enemy.x + enemy.width / 2, enemy.y + enemy.height / 2, {
+    radius: Math.max(16 * this.scale, enemy.width * 0.58),
+    tint: this.stage.enemyTypes[enemy.typeKey].tint || ACCENT,
+    lifetime: 0.36
+  });
+  return true;
+};
+
+DefenseMinigameRuntime.prototype.tryStartEnemyAttack = function (enemy) {
+  var targetTower = null;
+  var profile = null;
+  var isSkill = false;
+
+  if (enemy.skillProfile && enemy.skillCooldownMs <= 0) {
+    targetTower = this.findEnemyAttackTarget(enemy, enemy.skillProfile);
+    if (targetTower) {
+      profile = enemy.skillProfile;
+      isSkill = true;
+    }
+  }
+
+  if (!profile && enemy.attackProfile && enemy.attackCooldownMs <= 0) {
+    targetTower = this.findEnemyAttackTarget(enemy, enemy.attackProfile);
+    if (targetTower) {
+      profile = enemy.attackProfile;
+    }
+  }
+
+  if (!profile) {
+    return false;
+  }
+
+  return this.beginEnemyAttack(enemy, profile, targetTower, isSkill);
+};
+
+DefenseMinigameRuntime.prototype.createEnemyProjectile = function (enemy, profile, targetTower, delayRemaining) {
+  return {
+    kind: profile.projectileKind || 'shot',
+    x: enemy.x + enemy.width / 2,
+    y: enemy.y + enemy.height / 2,
+    age: 0,
+    lifetime: 2.4,
+    speed: profile.projectileSpeed || (220 * this.scale),
+    damage: profile.damage || 0,
+    tint: this.stage.enemyTypes[enemy.typeKey].tint || DANGER,
+    splashRadius: profile.splashRadius || 0,
+    statusEffects: profile.statusEffects ? profile.statusEffects.slice() : [],
+    targetTowerId: targetTower ? targetTower.id : '',
+    targetX: targetTower ? targetTower.x : enemy.activeAttackTargetX,
+    targetY: targetTower ? targetTower.y : enemy.activeAttackTargetY,
+    delayRemaining: delayRemaining || 0
+  };
+};
+
+DefenseMinigameRuntime.prototype.resolveEnemyDirectAttack = function (enemy, profile, targetTower, now) {
+  var hitCount = 0;
+  var affected = [];
+  var sourceTint = this.stage.enemyTypes[enemy.typeKey].tint || DANGER;
+  var originX = enemy.x + enemy.width / 2;
+  var originY = enemy.y + enemy.height / 2;
+  var centerX = targetTower ? targetTower.x : originX;
+  var centerY = targetTower ? targetTower.y : originY;
+
+  if (profile.module === 'pressureAura') {
+    affected = this.getTowersInRadius(originX, originY, profile.radius || (64 * this.scale));
+  } else if (targetTower && !targetTower.isBroken) {
+    affected = [targetTower];
+    if (profile.splashRadius > 0) {
+      affected = this.getTowersInRadius(targetTower.x, targetTower.y, profile.splashRadius);
+    }
+  }
+
+  affected.forEach(function (tower) {
+    if (this.applyDamageToTower(tower, profile.damage || 0, profile.statusEffects || [], now, sourceTint)) {
+      hitCount += 1;
+    }
+  }, this);
+
+  if (hitCount > 0) {
+    this.pushFeedbackMark(profile.module === 'pressureAura' ? 'enemyAura' : 'towerHit', centerX, centerY, {
+      radius: profile.module === 'pressureAura' ? Math.max(18 * this.scale, profile.radius * 0.6) : 16 * this.scale,
+      tint: sourceTint,
+      lifetime: profile.module === 'pressureAura' ? 0.34 : 0.24
+    });
+  }
+
+  return hitCount;
+};
+
+DefenseMinigameRuntime.prototype.resolveEnemyAttack = function (enemy, now) {
+  var profile = enemy.activeAttackProfile;
+  var targetTower;
+  var i;
+
+  if (!profile) {
+    return 0;
+  }
+
+  targetTower = enemy.activeAttackTargetId ? this.findTowerById(enemy.activeAttackTargetId) : null;
+
+  if (profile.module === 'meleeStrike' || profile.module === 'pressureAura') {
+    return this.resolveEnemyDirectAttack(enemy, profile, targetTower, now);
+  }
+
+  if (profile.module === 'burstVolley') {
+    for (i = 0; i < Math.max(1, profile.volleyCount || 1); i += 1) {
+      this.enemyProjectiles.push(this.createEnemyProjectile(enemy, profile, targetTower, i * (profile.volleySpacingMs || 0)));
+    }
+    return Math.max(1, profile.volleyCount || 1);
+  }
+
+  this.enemyProjectiles.push(this.createEnemyProjectile(enemy, profile, targetTower, 0));
+  return 1;
+};
+
+DefenseMinigameRuntime.prototype.updateEnemyProjectiles = function (dt) {
+  var dtMs = dt * 1000;
+  var self = this;
+
+  this.enemyProjectiles = this.enemyProjectiles.filter(function (projectile) {
+    var targetTower;
+    var targetX;
+    var targetY;
+    var dx;
+    var dy;
+    var dist;
+    var step;
+
+    projectile.age += dt;
+    if (projectile.age >= projectile.lifetime) {
+      return false;
+    }
+
+    if (projectile.delayRemaining > 0) {
+      projectile.delayRemaining = Math.max(0, projectile.delayRemaining - dtMs);
+      return true;
+    }
+
+    targetTower = projectile.targetTowerId ? self.findTowerById(projectile.targetTowerId) : null;
+    if (targetTower && !targetTower.isBroken) {
+      targetX = targetTower.x;
+      targetY = targetTower.y;
+      projectile.targetX = targetX;
+      projectile.targetY = targetY;
+    } else {
+      targetX = projectile.targetX;
+      targetY = projectile.targetY;
+    }
+
+    dx = targetX - projectile.x;
+    dy = targetY - projectile.y;
+    dist = Math.sqrt(dx * dx + dy * dy) || 1;
+    step = projectile.speed * dt;
+
+    if (dist <= step) {
+      projectile.x = targetX;
+      projectile.y = targetY;
+      self.resolveEnemyProjectileImpact(projectile, targetX, targetY);
+      return false;
+    }
+
+    projectile.x += (dx / dist) * step;
+    projectile.y += (dy / dist) * step;
+    return true;
+  });
+};
+
+DefenseMinigameRuntime.prototype.resolveEnemyProjectileImpact = function (projectile, x, y) {
+  var targetTower = projectile.targetTowerId ? this.findTowerById(projectile.targetTowerId) : null;
+  var affected = [];
+  var hitCount = 0;
+
+  if (projectile.splashRadius > 0) {
+    affected = this.getTowersInRadius(x, y, projectile.splashRadius);
+  } else if (targetTower && !targetTower.isBroken) {
+    affected = [targetTower];
+  }
+
+  affected.forEach(function (tower) {
+    if (this.applyDamageToTower(tower, projectile.damage || 0, projectile.statusEffects || [], Date.now(), projectile.tint)) {
+      hitCount += 1;
+    }
+  }, this);
+
+  if (hitCount > 0) {
+    this.pushFeedbackMark(projectile.splashRadius > 0 ? 'enemySplash' : 'enemyProjectileHit', x, y, {
+      radius: projectile.splashRadius > 0 ? Math.max(18 * this.scale, projectile.splashRadius * 0.6) : 15 * this.scale,
+      tint: projectile.tint,
+      lifetime: 0.28
+    });
+  }
+
+  return hitCount;
+};
+
+DefenseMinigameRuntime.prototype.updateEnemies = function (dt, now) {
   var reachedTargetIds = [];
-  var now = Date.now();
+  var dtMs = dt * 1000;
   var self = this;
 
   this.enemies.forEach(function (enemy) {
@@ -1173,10 +1817,29 @@ DefenseMinigameRuntime.prototype.updateEnemies = function (dt) {
     var dx;
     var dy;
     var dist;
+    var profile;
     var speedFactor;
     var step;
 
     if (enemy.isDead) {
+      return;
+    }
+
+    enemy.attackCooldownMs = Math.max(0, enemy.attackCooldownMs - dtMs);
+    enemy.skillCooldownMs = Math.max(0, enemy.skillCooldownMs - dtMs);
+
+    if (enemy.attackState !== 'moving') {
+      enemy.attackStateRemainingMs = Math.max(0, enemy.attackStateRemainingMs - dtMs);
+      if (enemy.attackState === 'windup' && enemy.attackStateRemainingMs <= 0) {
+        profile = enemy.activeAttackProfile;
+        self.resolveEnemyAttack(enemy, now);
+        enemy.attackState = 'recovery';
+        enemy.attackStateRemainingMs = profile ? (profile.recoveryMs || 180) : 180;
+        enemy.activeAttackProfile = null;
+      } else if (enemy.attackState === 'recovery' && enemy.attackStateRemainingMs <= 0) {
+        enemy.attackState = 'moving';
+        enemy.attackStateRemainingMs = 0;
+      }
       return;
     }
 
@@ -1187,6 +1850,10 @@ DefenseMinigameRuntime.prototype.updateEnemies = function (dt) {
       enemy.progress / self.stage.pathLength >= enemy.sprintProgressRatio
     ) {
       self.activateEnemySprint(enemy);
+    }
+
+    if (self.tryStartEnemyAttack(enemy)) {
+      return;
     }
 
     nextWaypoint = self.stage.path[enemy.waypointIndex + 1];
@@ -1260,13 +1927,21 @@ DefenseMinigameRuntime.prototype.getTowerStats = function (tower) {
     splashRadius: towerType.splashRadius || 0,
     slowAmount: towerType.slowAmount || 1,
     slowDuration: towerType.slowDuration || 0,
+    maxDurability: tower.maxDurability || this.getTowerMaxDurabilityForLevel(towerType, tower.level),
     tint: towerType.tint,
     name: towerType.name,
     role: towerType.role
   };
 };
 
-DefenseMinigameRuntime.prototype.updateTowers = function (dt) {
+DefenseMinigameRuntime.prototype.getTowerCombatStats = function (tower, now) {
+  var stats = this.getTowerStats(tower);
+
+  stats.range = stats.range * this.getTowerRangeMultiplier(tower, now);
+  return stats;
+};
+
+DefenseMinigameRuntime.prototype.updateTowers = function (dt, now) {
   var dtMs = dt * 1000;
   var self = this;
 
@@ -1274,9 +1949,16 @@ DefenseMinigameRuntime.prototype.updateTowers = function (dt) {
     var stats;
     var target;
     var projectile;
+    var recoveryMultiplier;
 
-    tower.cooldownMs = Math.max(0, tower.cooldownMs - dtMs);
-    stats = self.getTowerStats(tower);
+    self.updateTowerRecoveryState(tower, now);
+    recoveryMultiplier = self.getTowerCooldownRecoveryMultiplier(tower, now);
+    tower.cooldownMs = Math.max(0, tower.cooldownMs - dtMs * recoveryMultiplier);
+    if (tower.isBroken || self.getTowerStatusSnapshot(tower, now).jammed) {
+      return;
+    }
+
+    stats = self.getTowerCombatStats(tower, now);
     if (tower.cooldownMs > 0) {
       return;
     }
@@ -1925,10 +2607,10 @@ DefenseMinigameRuntime.prototype.getPauseAudioButtonRects = function () {
 
 DefenseMinigameRuntime.prototype.getSelectedTowerActionRects = function (panel) {
   var buttonWidth = this.getScaledSize(70, 68, 74);
-  var buttonHeight = this.getScaledSize(32, 30, 34);
+  var buttonHeight = this.getScaledSize(28, 26, 30);
   var insetRight = this.getScaledSize(20, 14, 24);
-  var gap = this.getScaledSize(8, 6, 8);
-  var stackHeight = buttonHeight * 2 + gap;
+  var gap = this.getScaledSize(6, 5, 7);
+  var stackHeight = buttonHeight * 3 + gap * 2;
   var topOffset = (panel.height - stackHeight) / 2;
 
   return {
@@ -1938,9 +2620,15 @@ DefenseMinigameRuntime.prototype.getSelectedTowerActionRects = function (panel) 
       width: buttonWidth,
       height: buttonHeight
     },
-    sellButton: {
+    repairButton: {
       x: panel.x + panel.width - insetRight - buttonWidth,
       y: panel.y + topOffset + buttonHeight + gap,
+      width: buttonWidth,
+      height: buttonHeight
+    },
+    sellButton: {
+      x: panel.x + panel.width - insetRight - buttonWidth,
+      y: panel.y + topOffset + (buttonHeight + gap) * 2,
       width: buttonWidth,
       height: buttonHeight
     }
@@ -2008,9 +2696,11 @@ DefenseMinigameRuntime.prototype.rebuildTouchRects = function () {
   if (selectedTowerPanel) {
     towerActions = this.getSelectedTowerActionRects(selectedTowerPanel);
     this.touchRects.upgradeButton = towerActions.upgradeButton;
+    this.touchRects.repairButton = towerActions.repairButton;
     this.touchRects.sellButton = towerActions.sellButton;
   } else {
     this.touchRects.upgradeButton = null;
+    this.touchRects.repairButton = null;
     this.touchRects.sellButton = null;
   }
 
@@ -2205,19 +2895,8 @@ DefenseMinigameRuntime.prototype.getTowerAssetKey = function (typeKey, useIcon) 
 };
 
 DefenseMinigameRuntime.prototype.getEnemyAssetKey = function (typeKey) {
-  if (typeKey === 'dust') {
-    return 'enemyDust';
-  }
-  if (typeKey === 'cucumber') {
-    return 'enemyCucumber';
-  }
-  if (typeKey === 'vacuum') {
-    return 'enemyVacuum';
-  }
-  if (typeKey === 'mailman') {
-    return 'enemyMailman';
-  }
-  return '';
+  var enemyType = this.stage && this.stage.enemyTypes ? this.stage.enemyTypes[typeKey] : content.ENEMY_TYPES[typeKey];
+  return enemyType && enemyType.assetKey ? enemyType.assetKey : '';
 };
 
 DefenseMinigameRuntime.prototype.getProjectileAssetKey = function (kind) {
@@ -2449,7 +3128,7 @@ DefenseMinigameRuntime.prototype.renderTitle = function () {
   });
   this.drawPanelTexture(panelX, panelY, panelWidth, panelHeight, metrics.panelRadius, 0.16);
 
-  this.drawBadgePill(this.width / 2, layout.badgeY, layout.badgeWidth, '双关守卫 · 10 波挑战', 'iconKibble');
+  this.drawBadgePill(this.width / 2, layout.badgeY, layout.badgeWidth, '双关守卫 · ' + selectedStage.waveCount + ' 波挑战', 'iconKibble');
   this.drawAudioToggleButton(audioButtons.music, '音乐', this.audioSettings.musicEnabled);
   this.drawAudioToggleButton(audioButtons.sfx, '音效', this.audioSettings.sfxEnabled);
 
@@ -2674,6 +3353,11 @@ DefenseMinigameRuntime.prototype.renderStage = function () {
     this.drawEnemy(enemy);
   }
 
+  for (i = 0; i < this.enemyProjectiles.length; i += 1) {
+    projectile = this.enemyProjectiles[i];
+    this.drawEnemyProjectile(projectile);
+  }
+
   for (i = 0; i < this.projectiles.length; i += 1) {
     projectile = this.projectiles[i];
     this.drawProjectile(projectile);
@@ -2714,7 +3398,9 @@ DefenseMinigameRuntime.prototype.renderGameplayHud = function () {
   var actionSummary;
   var actionRects;
   var upgradeCost;
-  var visibleWave = this.waveInProgress ? this.activeWaveNumber : Math.min(this.waveCursor + 1, this.stage.waves.length);
+  var canUpgrade;
+  var canRepair;
+  var visibleWave = this.getDisplayedWaveNumber();
   var topCardRightX = topCard.x + topCard.width - this.getScaledSize(18, 14, 20);
   var nextWaveSummary = '';
   var statusText = '';
@@ -2748,10 +3434,6 @@ DefenseMinigameRuntime.prototype.renderGameplayHud = function () {
   var headerDividerY;
   var summaryTrayWidth;
   var summaryTrayHeight;
-
-  if (this.waveCursor >= this.stage.waves.length) {
-    visibleWave = this.stage.waves.length;
-  }
 
   if (!this.waveInProgress && this.waveCursor < this.stage.waves.length) {
     nextWaveSummary = this.getWaveSummary(this.waveCursor);
@@ -3013,9 +3695,12 @@ DefenseMinigameRuntime.prototype.renderGameplayHud = function () {
   if (selectedTower) {
     panelLayout = this.getSelectedTowerPanelLayout();
     panel = panelLayout.panel;
+    this.ensureTowerDurabilityState(selectedTower);
     stats = this.getTowerStats(selectedTower);
     actionSummary = this.getTowerActionSummary(selectedTower);
     upgradeCost = this.stage.towerTypes[selectedTower.typeKey].upgradeCosts[selectedTower.level - 1] || 0;
+    canUpgrade = !!upgradeCost && this.gold >= upgradeCost && !selectedTower.isBroken;
+    canRepair = actionSummary.needsRepair && this.gold >= actionSummary.repairCost;
     utils.drawPanel(this.ctx, panel.x, panel.y, panel.width, panel.height, {
       fillStyle: 'rgba(255, 250, 242, 0.97)',
       strokeStyle: 'rgba(84, 65, 40, 0.18)',
@@ -3027,24 +3712,33 @@ DefenseMinigameRuntime.prototype.renderGameplayHud = function () {
     this.drawMiniMetricCard(panelLayout.statCards.damage, '伤害', String(stats.damage), {
       valueColor: '#9a5e1b'
     });
-    this.drawMiniMetricCard(panelLayout.statCards.range, '射程', String(Math.round(stats.range)), {
-      valueColor: '#476272'
+    this.drawMiniMetricCard(panelLayout.statCards.range, '耐久', actionSummary.durability + '/' + actionSummary.maxDurability, {
+      valueColor: selectedTower.isBroken ? '#b64a3f' : '#476272'
     });
     this.drawClampedText(
-      actionSummary.nextCost
-        ? ('返还 ' + actionSummary.refund + ' · 下级 +' + actionSummary.damageGain + '伤害 / +' + actionSummary.rangeGain + '射程')
-        : ('已满级 · 可返还 ' + actionSummary.refund + ' 小鱼干'),
+      selectedTower.isBroken
+        ? ('已破损 · 修理 ' + actionSummary.repairCost + ' · 可返还 ' + actionSummary.refund)
+        : (
+          actionSummary.needsRepair
+            ? ('射程 ' + Math.round(stats.range) + ' · 修理 ' + actionSummary.repairCost + ' · 可返还 ' + actionSummary.refund)
+            : (
+              actionSummary.nextCost
+                ? ('射程 ' + Math.round(stats.range) + ' · 下级 +' + actionSummary.damageGain + '伤害 / +' + actionSummary.rangeGain + '射程')
+                : ('射程 ' + Math.round(stats.range) + ' · 已满级 · 可返还 ' + actionSummary.refund)
+            )
+        ),
       panelLayout.summaryX,
       panelLayout.summaryY,
       panelLayout.summaryWidth,
       this.getScaledSize(10, 9, 11),
       this.getScaledSize(8, 7, 9),
       'bold',
-      actionSummary.nextCost ? 'rgba(90,58,32,0.84)' : 'rgba(124, 130, 144, 0.9)',
+      (selectedTower.isBroken || actionSummary.needsRepair) ? 'rgba(154, 67, 58, 0.92)' : (actionSummary.nextCost ? 'rgba(90,58,32,0.84)' : 'rgba(124, 130, 144, 0.9)'),
       'left',
       'middle'
     );
-    this.drawSmallButton(actionRects.upgradeButton, upgradeCost ? ('升 ' + upgradeCost) : '满级', upgradeCost && this.gold >= upgradeCost ? ACCENT : 'rgba(140,140,140,0.72)', !!upgradeCost && this.gold >= upgradeCost);
+    this.drawSmallButton(actionRects.upgradeButton, upgradeCost ? ('升 ' + upgradeCost) : '满级', canUpgrade ? ACCENT : 'rgba(140,140,140,0.72)', canUpgrade);
+    this.drawSmallButton(actionRects.repairButton, '修 ' + actionSummary.repairCost, SUCCESS, canRepair);
     this.drawSmallButton(actionRects.sellButton, '卖出', DANGER, true);
   }
 };
@@ -3054,13 +3748,9 @@ DefenseMinigameRuntime.prototype.renderPauseOverlay = function () {
   var metrics = this.getUiMetrics();
   var panel = layout.panel;
   var audioButtons = layout.audioButtons;
-  var visibleWave = this.waveInProgress ? this.activeWaveNumber : Math.min(this.waveCursor + 1, this.stage.waves.length);
+  var visibleWave = this.getDisplayedWaveNumber();
   var actionTray;
   var actionLabelY;
-
-  if (this.waveCursor >= this.stage.waves.length) {
-    visibleWave = this.stage.waves.length;
-  }
 
   this.ctx.fillStyle = 'rgba(24, 18, 12, 0.42)';
   this.ctx.fillRect(0, 0, this.width, this.height);
@@ -3527,10 +4217,18 @@ DefenseMinigameRuntime.prototype.drawSlot = function (slot) {
 DefenseMinigameRuntime.prototype.drawTower = function (tower) {
   var selected = tower.id === this.selectedPlacedTowerId;
   var image = this.assets.get(this.getTowerAssetKey(tower.typeKey, false));
+  var now = Date.now();
   var stats;
+  var status = this.getTowerStatusSnapshot(tower, now);
+  var durabilityRatio;
+  var badgeText = '';
+  var badgeFill = 'rgba(84, 65, 40, 0.78)';
+
+  this.ensureTowerDurabilityState(tower);
+  durabilityRatio = utils.clamp(tower.durability / Math.max(1, tower.maxDurability), 0, 1);
 
   if (selected) {
-    stats = this.getTowerStats(tower);
+    stats = this.getTowerCombatStats(tower, now);
     this.ctx.save();
     this.ctx.fillStyle = 'rgba(255, 176, 92, 0.08)';
     this.ctx.beginPath();
@@ -3554,6 +4252,10 @@ DefenseMinigameRuntime.prototype.drawTower = function (tower) {
     this.ctx.restore();
   }
 
+  if (tower.isBroken) {
+    this.ctx.save();
+    this.ctx.globalAlpha = 0.48;
+  }
   if (!this.drawAssetCentered(image, tower.x, tower.y - 2 * this.scale, 54 * this.scale, 54 * this.scale)) {
     this.drawTowerIcon(this.ctx, {
       x: tower.x,
@@ -3562,8 +4264,37 @@ DefenseMinigameRuntime.prototype.drawTower = function (tower) {
       radius: 24 * this.scale
     });
   }
+  if (tower.isBroken) {
+    this.ctx.restore();
+  }
   utils.setTextStyle(this.ctx, 10 * this.scale, 'bold', '#fffaf2', 'center', 'middle');
   this.ctx.fillText('Lv.' + tower.level, tower.x, tower.y + 30 * this.scale);
+
+  utils.fillRoundRect(this.ctx, tower.x - 20 * this.scale, tower.y - 33 * this.scale, 40 * this.scale, 4 * this.scale, 999, 'rgba(67, 50, 36, 0.18)');
+  utils.fillRoundRect(this.ctx, tower.x - 20 * this.scale, tower.y - 33 * this.scale, 40 * this.scale * durabilityRatio, 4 * this.scale, 999, tower.isBroken ? DANGER : SUCCESS);
+
+  if (tower.isBroken) {
+    badgeText = '破损';
+    badgeFill = 'rgba(239, 123, 109, 0.94)';
+  } else if (status.jammed) {
+    badgeText = '禁射';
+    badgeFill = 'rgba(84, 65, 40, 0.9)';
+  } else if (status.suppressed) {
+    badgeText = '压制';
+    badgeFill = 'rgba(79, 119, 163, 0.92)';
+  } else if (status.blinded) {
+    badgeText = '减程';
+    badgeFill = 'rgba(114, 134, 192, 0.9)';
+  } else if (status.marked) {
+    badgeText = '锁定';
+    badgeFill = 'rgba(194, 122, 104, 0.92)';
+  }
+
+  if (badgeText) {
+    utils.fillRoundRect(this.ctx, tower.x - 15 * this.scale, tower.y - 49 * this.scale, 30 * this.scale, 13 * this.scale, 8 * this.scale, badgeFill);
+    utils.setTextStyle(this.ctx, 8 * this.scale, 'bold', '#fffaf2', 'center', 'middle');
+    this.ctx.fillText(badgeText, tower.x, tower.y - 42.5 * this.scale);
+  }
 };
 
 DefenseMinigameRuntime.prototype.drawTowerIcon = function (ctx, spec) {
@@ -3673,27 +4404,40 @@ DefenseMinigameRuntime.prototype.drawEnemy = function (enemy) {
   var badgeText = '';
   var badgeFill = 'rgba(114, 134, 192, 0.9)';
   var auraFill = 'rgba(114, 134, 192, 0.82)';
+  var burstAuraFill = 'rgba(239, 123, 109, 0.85)';
   var pulse = 0.5 + Math.sin(Date.now() / 180) * 0.18;
+  var badgeRadiusScale = enemyType && enemyType.isBoss ? 0.82 : 0.74;
 
-  if (enemy.typeKey === 'vacuum') {
-    badgeText = enemy.armorBroken ? '破甲' : '装甲';
-    badgeFill = enemy.armorBroken ? 'rgba(126, 215, 193, 0.9)' : 'rgba(114, 134, 192, 0.9)';
-    auraFill = enemy.armorBroken ? 'rgba(126, 215, 193, 0.82)' : 'rgba(114, 134, 192, 0.82)';
-  } else if (enemy.typeKey === 'mailman') {
-    badgeText = enemy.isEnraged ? '狂暴' : '首领';
-    badgeFill = enemy.isEnraged ? 'rgba(239, 123, 109, 0.94)' : 'rgba(239, 123, 109, 0.9)';
-    auraFill = enemy.isEnraged ? 'rgba(239, 123, 109, 0.94)' : 'rgba(239, 123, 109, 0.9)';
-  } else if (enemy.typeKey === 'cucumber' && enemy.sprintUntil > Date.now()) {
+  if (enemy.attackState === 'windup' && enemy.activeAttackProfile) {
+    badgeText = '蓄力';
+    badgeFill = 'rgba(239, 123, 109, 0.94)';
+    auraFill = 'rgba(239, 123, 109, 0.86)';
+  } else if (enemy.isEnraged) {
+    badgeText = enemyType && enemyType.badgeLabel === '终局' ? '终局' : '狂暴';
+    badgeFill = 'rgba(239, 123, 109, 0.94)';
+    auraFill = 'rgba(239, 123, 109, 0.9)';
+  } else if (enemy.sprintUntil > Date.now()) {
     badgeText = '冲刺';
     badgeFill = 'rgba(107, 195, 106, 0.92)';
     auraFill = 'rgba(107, 195, 106, 0.82)';
+    if (enemyType && enemyType.tint) {
+      burstAuraFill = enemyType.tint;
+    }
+  } else if (enemy.armor > 0) {
+    badgeText = enemy.armorBroken ? '破甲' : '装甲';
+    badgeFill = enemy.armorBroken ? 'rgba(126, 215, 193, 0.9)' : 'rgba(114, 134, 192, 0.9)';
+    auraFill = enemy.armorBroken ? 'rgba(126, 215, 193, 0.82)' : 'rgba(114, 134, 192, 0.82)';
+  } else if (enemyType && enemyType.badgeLabel) {
+    badgeText = enemyType.badgeLabel;
+    badgeFill = enemyType.badgeLabel === '终局' ? 'rgba(63, 116, 184, 0.94)' : 'rgba(114, 134, 192, 0.9)';
+    auraFill = enemyType.badgeLabel === '终局' ? 'rgba(63, 116, 184, 0.9)' : 'rgba(114, 134, 192, 0.82)';
   }
 
   this.ctx.save();
-  if (enemy.sprintUntil > Date.now() || enemy.isEnraged) {
+  if (enemy.sprintUntil > Date.now() || enemy.isEnraged || enemy.attackState === 'windup') {
     this.ctx.save();
     this.ctx.globalAlpha = 0.14 + pulse * 0.14;
-    this.ctx.fillStyle = enemy.isEnraged ? 'rgba(239, 123, 109, 0.85)' : 'rgba(107, 195, 106, 0.82)';
+    this.ctx.fillStyle = enemy.attackState === 'windup' ? 'rgba(239, 123, 109, 0.72)' : (enemy.isEnraged ? burstAuraFill : 'rgba(107, 195, 106, 0.82)');
     this.ctx.beginPath();
     this.ctx.arc(centerX, centerY, enemy.width * 0.86, 0, Math.PI * 2);
     this.ctx.fill();
@@ -3756,7 +4500,7 @@ DefenseMinigameRuntime.prototype.drawEnemy = function (enemy) {
     this.ctx.globalAlpha = 0.12 + pulse * 0.18;
     this.ctx.fillStyle = auraFill;
     this.ctx.beginPath();
-    this.ctx.arc(centerX, centerY, enemy.width * (enemy.typeKey === 'mailman' ? 0.82 : 0.74), 0, Math.PI * 2);
+    this.ctx.arc(centerX, centerY, enemy.width * badgeRadiusScale, 0, Math.PI * 2);
     this.ctx.fill();
     this.ctx.restore();
     utils.fillRoundRect(this.ctx, centerX - 15 * this.scale, enemy.y - 28 * this.scale, 30 * this.scale, 14 * this.scale, 8 * this.scale, badgeFill);
@@ -3816,6 +4560,50 @@ DefenseMinigameRuntime.prototype.drawProjectile = function (projectile) {
     this.ctx.moveTo(projectile.x - 7 * this.scale, projectile.y);
     this.ctx.lineTo(projectile.x - 12 * this.scale, projectile.y);
     this.ctx.stroke();
+  }
+  this.ctx.restore();
+};
+
+DefenseMinigameRuntime.prototype.drawEnemyProjectile = function (projectile) {
+  this.ctx.save();
+  if (projectile.kind === 'bomb' || projectile.kind === 'bossBomb' || projectile.kind === 'finalDispatch' || projectile.kind === 'overload') {
+    this.ctx.fillStyle = projectile.tint;
+    this.ctx.beginPath();
+    this.ctx.arc(projectile.x, projectile.y, 8 * this.scale, 0, Math.PI * 2);
+    this.ctx.fill();
+    this.ctx.strokeStyle = 'rgba(255, 245, 236, 0.78)';
+    this.ctx.lineWidth = 2 * this.scale;
+    this.ctx.beginPath();
+    this.ctx.arc(projectile.x, projectile.y, 11 * this.scale, 0, Math.PI * 2);
+    this.ctx.stroke();
+  } else if (projectile.kind === 'hex' || projectile.kind === 'hack' || projectile.kind === 'darkParcel' || projectile.kind === 'arcane') {
+    this.ctx.strokeStyle = projectile.tint;
+    this.ctx.lineWidth = 2.4 * this.scale;
+    this.ctx.beginPath();
+    this.ctx.arc(projectile.x, projectile.y, 8 * this.scale, 0, Math.PI * 2);
+    this.ctx.stroke();
+    this.ctx.beginPath();
+    this.ctx.moveTo(projectile.x - 6 * this.scale, projectile.y);
+    this.ctx.lineTo(projectile.x + 6 * this.scale, projectile.y);
+    this.ctx.moveTo(projectile.x, projectile.y - 6 * this.scale);
+    this.ctx.lineTo(projectile.x, projectile.y + 6 * this.scale);
+    this.ctx.stroke();
+  } else if (projectile.kind === 'rifle' || projectile.kind === 'shot' || projectile.kind === 'shuriken' || projectile.kind === 'knife' || projectile.kind === 'ion' || projectile.kind === 'beam') {
+    this.ctx.fillStyle = projectile.tint;
+    this.ctx.beginPath();
+    this.ctx.ellipse(projectile.x, projectile.y, 7 * this.scale, 4.5 * this.scale, 0.3, 0, Math.PI * 2);
+    this.ctx.fill();
+    this.ctx.strokeStyle = 'rgba(255,255,255,0.34)';
+    this.ctx.lineWidth = 1.4 * this.scale;
+    this.ctx.beginPath();
+    this.ctx.moveTo(projectile.x - 8 * this.scale, projectile.y);
+    this.ctx.lineTo(projectile.x - 13 * this.scale, projectile.y);
+    this.ctx.stroke();
+  } else {
+    this.ctx.fillStyle = projectile.tint;
+    this.ctx.beginPath();
+    this.ctx.arc(projectile.x, projectile.y, 6 * this.scale, 0, Math.PI * 2);
+    this.ctx.fill();
   }
   this.ctx.restore();
 };
@@ -3880,6 +4668,35 @@ DefenseMinigameRuntime.prototype.drawFeedbackMark = function (mark) {
       this.ctx.lineTo(mark.x - radius * 0.08, mark.y + radius * 0.1);
       this.ctx.lineTo(mark.x + radius * 0.16, mark.y - radius * 0.18);
       this.ctx.lineTo(mark.x + radius * 0.5, mark.y + radius * 0.22);
+      this.ctx.stroke();
+    }
+  } else if (mark.kind === 'enemyCast' || mark.kind === 'enemySplash' || mark.kind === 'enemyProjectileHit' || mark.kind === 'enemyAura') {
+    this.ctx.strokeStyle = mark.tint;
+    this.ctx.lineWidth = mark.kind === 'enemyCast' ? 2.2 * this.scale : 2.8 * this.scale;
+    this.ctx.beginPath();
+    this.ctx.arc(mark.x, mark.y, radius, 0, Math.PI * 2);
+    this.ctx.stroke();
+    if (mark.kind !== 'enemyCast') {
+      this.ctx.beginPath();
+      this.ctx.arc(mark.x, mark.y, radius * 0.54, 0, Math.PI * 2);
+      this.ctx.stroke();
+    }
+  } else if (mark.kind === 'towerHit' || mark.kind === 'towerBreak' || mark.kind === 'towerRepair') {
+    this.ctx.strokeStyle = mark.tint;
+    this.ctx.lineWidth = mark.kind === 'towerBreak' ? 3 * this.scale : 2.4 * this.scale;
+    this.ctx.beginPath();
+    this.ctx.arc(mark.x, mark.y, radius, 0, Math.PI * 2);
+    this.ctx.stroke();
+    if (mark.kind === 'towerBreak') {
+      this.ctx.beginPath();
+      this.ctx.moveTo(mark.x - radius * 0.44, mark.y - radius * 0.44);
+      this.ctx.lineTo(mark.x + radius * 0.44, mark.y + radius * 0.44);
+      this.ctx.moveTo(mark.x + radius * 0.44, mark.y - radius * 0.44);
+      this.ctx.lineTo(mark.x - radius * 0.44, mark.y + radius * 0.44);
+      this.ctx.stroke();
+    } else {
+      this.ctx.beginPath();
+      this.ctx.arc(mark.x, mark.y, radius * 0.52, 0, Math.PI * 2);
       this.ctx.stroke();
     }
   } else {

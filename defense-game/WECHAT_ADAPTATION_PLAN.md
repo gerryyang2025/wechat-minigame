@@ -1,5 +1,18 @@
 # WeChat Minigame Adaptation Plan
 
+## Status Note
+
+This file records the original first-playable planning phase for `defense-game`.
+
+The current implementation has already moved beyond that initial scope:
+
+- two playable stages instead of one
+- three selectable difficulties
+- sixteen waves per run
+- a broader enemy roster with multiple elite and boss variants
+
+Use [README.md](./README.md) for the current gameplay scope, and treat this document as historical design rationale plus phased implementation notes.
+
 ## Goal
 
 Recreate the core gameplay loop of `/Users/gerry/Proj/github/new/opengame-agent/demo_towerDefense_hajimi` inside `defense-game`, while adapting the interaction model, UI structure, and technical architecture to fit WeChat minigame constraints.

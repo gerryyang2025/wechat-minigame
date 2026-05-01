@@ -1,6 +1,6 @@
 # Art Asset Optimization Status
 
-Last updated: `2026-04-27`
+Last updated: `2026-04-29`
 
 This document tracks the current state of art-resource migration for `defense-game`, what has already been replaced with source art from `demo_towerDefense_hajimi`, and what still remains to be improved.
 
@@ -23,13 +23,13 @@ Current imported art resources live in:
 
 Current footprint:
 
-- `images/`: about `1.6M`
+- `images/`: about `2.0M`
 - `fonts/`: about `68K`
-- whole `defense-game/`: about `1.8M`
+- whole `defense-game/`: about `2.9M`
 
 Imported image count:
 
-- `23` files
+- `37` files
 
 ## Completed
 
@@ -55,6 +55,20 @@ Current manifest includes:
 - `enemyDust`
 - `enemyCucumber`
 - `enemyVacuum`
+- `enemyMailman2`
+- `enemyMailman3`
+- `enemyMailman4`
+- `enemyMailman5`
+- `enemyPirate`
+- `enemyKnight`
+- `enemySpaceman`
+- `enemyWizard`
+- `enemyWildman`
+- `enemyWarrior`
+- `enemyNinja`
+- `enemyWildwoman`
+- `enemyIronman`
+- `enemyShooter`
 - `enemyMailman`
 - `projMung`
 - `projBone`
@@ -101,6 +115,20 @@ The main combat-layer visuals have already moved away from hand-drawn placeholde
   - `enemy_dust.png`
   - `enemy_cucumber.png`
   - `enemy_vacuum.png`
+  - `enemy_mailman2.png`
+  - `enemy_mailman3.png`
+  - `enemy_mailman4.png`
+  - `enemy_mailman5.png`
+  - `enemy_pirate.png`
+  - `enemy_knight.png`
+  - `enemy_spaceman.png`
+  - `enemy_wizard.png`
+  - `enemy_wildman.png`
+  - `enemy_warrior.png`
+  - `enemy_ninja.png`
+  - `enemy_wildwoman.png`
+  - `enemy_ironman.png`
+  - `enemy_shooter.png`
   - `enemy_mailman.png`
 - projectiles:
   - `proj_mung.png`
@@ -118,7 +146,19 @@ Relevant render entry points:
 - [drawEnemy](./src/minigame-runtime.js)
 - [drawProjectile](./src/minigame-runtime.js)
 
-### 4. Decorative Stage Props
+### 4. Expanded Enemy Portrait Integration
+
+The stage roster no longer depends on temporary generated enemy portraits.
+
+What changed:
+
+- the temporary `enemy_toaster.png` and `enemy_mixer.png` placeholders were removed
+- all new character enemies were integrated through the asset manifest
+- newly added enemy portraits were compressed to `160x160` to stay within WeChat minigame package limits
+
+This keeps the enemy presentation more stylistically consistent while still preserving the older household-chaos enemies that are already part of the game identity.
+
+### 5. Decorative Stage Props
 
 Additional source props have been migrated and compressed:
 
@@ -129,7 +169,7 @@ These are already used as stage decoration through:
 
 - [drawStageDecor](./src/minigame-runtime.js)
 
-### 5. Title / Pause / Result Visual Unification
+### 6. Title / Pause / Result Visual Unification
 
 The following screens are no longer just plain code-drawn boxes:
 
@@ -154,7 +194,7 @@ Relevant entry points:
 - [drawPrimaryButton](./src/minigame-runtime.js)
 - [drawSecondaryButton](./src/minigame-runtime.js)
 
-### 6. Bottom HUD Migration Progress
+### 7. Bottom HUD Migration Progress
 
 The gameplay HUD has also started moving toward the source game's modular UI feel:
 
