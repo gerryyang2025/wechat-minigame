@@ -1,0 +1,141 @@
+{
+  "description": "跳一跳 微信小游戏项目",
+  "setting": {
+    "urlCheck": true,
+    "es6": true,
+    "postcss": true,
+    "minified": true,
+    "newFeature": true,
+    "compileWorklet": false,
+    "uglifyFileName": false,
+    "uploadWithSourceMap": false,
+    "enhance": false,
+    "packNpmManually": false,
+    "packNpmRelationList": [],
+    "ignoreDevUnusedFiles": true,
+    "ignoreUploadUnusedFiles": true,
+    "localPlugins": false,
+    "disableUseStrict": false,
+    "useCompilerPlugins": false,
+    "condition": false,
+    "swc": false,
+    "disableSWC": true,
+    "babelSetting": {
+      "ignore": [],
+      "disablePlugins": [],
+      "outputPath": ""
+    },
+    "minifyWXSS": true,
+    "minifyWXML": true
+  },
+  "compileType": "minigame",
+  "libVersion": "3.15.1",
+  "appid": "wx879a9bf33c96b685",
+  "projectname": "jumpjump-game",
+  "simulatorPluginLibVersion": {},
+  "packOptions": {
+    "ignore": [
+      {
+        "value": "scripts",
+        "type": "folder"
+      },
+      {
+        "value": "README.md",
+        "type": "file"
+      },
+      {
+        "value": ".gitignore",
+        "type": "file"
+      },
+      {
+        "value": "project.private.config.json",
+        "type": "file"
+      },
+      {
+        "value": "project.private.config.example.json",
+        "type": "file"
+      },
+      {
+        "value": ".DS_Store",
+        "type": "file"
+      },
+      {
+        "value": ".DS_Store",
+        "type": "suffix"
+      },
+      {
+        "value": ".map",
+        "type": "suffix"
+      },
+      {
+        "value": ".log",
+        "type": "suffix"
+      },
+      {
+        "value": ".tmp",
+        "type": "suffix"
+      },
+      {
+        "value": ".tmp.png",
+        "type": "suffix"
+      },
+      {
+        "value": ".bak",
+        "type": "suffix"
+      },
+      {
+        "value": ".zip",
+        "type": "suffix"
+      },
+      {
+        "value": ".sb3",
+        "type": "suffix"
+      },
+      {
+        "value": "node_modules",
+        "type": "folder"
+      },
+      {
+        "value": "images/loading.png",
+        "type": "file"
+      },
+      {
+        "value": "images/platform-1000.png",
+        "type": "file"
+      },
+      {
+        "value": "audio/charge-max.wav",
+        "type": "file"
+      }
+    ],
+    "include": []
+  },
+  "watchOptions": {
+    "ignore": [
+      "scripts/**",
+      "node_modules/**",
+      "README.md",
+      ".gitignore",
+      "**/.DS_Store",
+      "*.map",
+      "*.log",
+      "*.tmp",
+      "*.tmp.png",
+      "**/*.tmp",
+      "**/*.tmp.png",
+      "*.bak",
+      "*.zip",
+      "*.sb3",
+      "project.private.config.json",
+      "project.private.config.example.json",
+      "images/loading.png",
+      "images/platform-1000.png",
+      "audio/charge-max.wav"
+    ]
+  },
+  "editorSetting": {
+    "tabIndent": "insertSpaces",
+    "tabSize": 2
+  },
+  "isGameTourist": false
+}

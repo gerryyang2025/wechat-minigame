@@ -10,6 +10,7 @@ Each top-level directory is a standalone project.
 - [`plane-game2`](./plane-game2/): sprite-driven arcade shooter
 - [`defense-game`](./defense-game/): portrait-first tower defense
 - [`marvel-game`](./marvel-game/): touch-first action-platformer
+- [`jumpjump-game`](./jumpjump-game/): portrait jump-and-score timing game
 
 Project-specific features, controls, and implementation details are documented in each game's own `README.md`.
 
@@ -19,10 +20,11 @@ Project-specific features, controls, and implementation details are documented i
 - Use `plane-game2` if you want a sprite-first arcade shooter direction.
 - Use `defense-game` if you want a portrait tower-defense direction.
 - Use `marvel-game` if you want a side-view action-platformer direction.
+- Use `jumpjump-game` if you want a WeChat-style jump timing game with platform generation, charge control, local scores, and leaderboard UI.
 
 ## Conventions
 
-- Keep all documentation in English for consistency across projects.
+- Keep each project README focused on gameplay, setup, validation, and release notes.
 - Do not commit local-only files such as `project.private.config.json`.
 - Keep each project independently importable in WeChat DevTools.
 
@@ -59,3 +61,4 @@ Project-specific features, controls, and implementation details are documented i
 - [plane-game2 README](./plane-game2/README.md)
 - [defense-game README](./defense-game/README.md)
 - [marvel-game README](./marvel-game/README.md)
+- [jumpjump-game README](./jumpjump-game/README.md)
