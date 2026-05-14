@@ -11,6 +11,7 @@ Each top-level directory is a standalone project.
 - [`defense-game`](./defense-game/): portrait-first tower defense
 - [`marvel-game`](./marvel-game/): touch-first action-platformer
 - [`jumpjump-game`](./jumpjump-game/): portrait jump-and-score timing game
+- [`bad-north-game`](./bad-north-game/): low-poly 3D island-defense strategy game
 
 Project-specific features, controls, and implementation details are documented in each game's own `README.md`.
 
@@ -21,6 +22,7 @@ Project-specific features, controls, and implementation details are documented i
 - Use `defense-game` if you want a portrait tower-defense direction.
 - Use `marvel-game` if you want a side-view action-platformer direction.
 - Use `jumpjump-game` if you want a WeChat-style jump timing game with platform generation, charge control, local scores, and leaderboard UI.
+- Use `bad-north-game` if you want a compact 3D island-defense direction with realtime squad movement, landing waves, and simplified tactical controls.
 
 ## Conventions
 
@@ -62,3 +64,4 @@ Project-specific features, controls, and implementation details are documented i
 - [defense-game README](./defense-game/README.md)
 - [marvel-game README](./marvel-game/README.md)
 - [jumpjump-game README](./jumpjump-game/README.md)
+- [bad-north-game README](./bad-north-game/README.md)
