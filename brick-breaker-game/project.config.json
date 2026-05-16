@@ -1,0 +1,64 @@
+{
+  "appid": "wx879a9bf33c96b685",
+  "projectname": "brick-breaker-game",
+  "compileType": "game",
+  "libVersion": "3.15.2",
+  "simulatorType": "wechat",
+  "condition": {},
+  "setting": {
+    "es6": true,
+    "enhance": true,
+    "minified": true,
+    "postcss": true,
+    "urlCheck": false,
+    "coverView": true,
+    "showShadowRootInWxmlPanel": true,
+    "compileHotReLoad": false,
+    "uploadWithSourceMap": false,
+    "compileWorklet": false,
+    "uglifyFileName": false,
+    "packNpmManually": false,
+    "packNpmRelationList": [],
+    "minifyWXSS": true,
+    "minifyWXML": true,
+    "localPlugins": false,
+    "disableUseStrict": false,
+    "useCompilerPlugins": false,
+    "condition": false,
+    "swc": false,
+    "disableSWC": true,
+    "babelSetting": {
+      "ignore": [],
+      "disablePlugins": [],
+      "outputPath": ""
+    }
+  },
+  "packOptions": {
+    "ignore": [
+      {
+        "value": "scripts/**",
+        "type": "glob"
+      },
+      {
+        "value": "README.md",
+        "type": "glob"
+      },
+      {
+        "value": ".gitignore",
+        "type": "glob"
+      },
+      {
+        "value": "project.private.config.example.json",
+        "type": "glob"
+      },
+      {
+        "value": "project.private.config.json",
+        "type": "glob"
+      }
+    ],
+    "include": []
+  },
+  "simulatorPluginLibVersion": {},
+  "isGameTourist": false,
+  "editorSetting": {}
+}

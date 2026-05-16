@@ -12,6 +12,7 @@ Each top-level directory is a standalone project.
 - [`marvel-game`](./marvel-game/): touch-first action-platformer
 - [`jumpjump-game`](./jumpjump-game/): portrait jump-and-score timing game
 - [`bad-north-game`](./bad-north-game/): low-poly 3D island-defense strategy game
+- [`brick-breaker-game`](./brick-breaker-game/): Three.js brick-breaker with ball volleys, power-ups, progression, and a custom level editor
 
 Project-specific features, controls, and implementation details are documented in each game's own `README.md`.
 
@@ -23,6 +24,7 @@ Project-specific features, controls, and implementation details are documented i
 - Use `marvel-game` if you want a side-view action-platformer direction.
 - Use `jumpjump-game` if you want a WeChat-style jump timing game with platform generation, charge control, local scores, and leaderboard UI.
 - Use `bad-north-game` if you want a compact 3D island-defense direction with realtime squad movement, landing waves, and simplified tactical controls.
+- Use `brick-breaker-game` if you want a portrait Three.js brick-breaker direction with drag aiming, paddle defense, falling bricks, power-ups, cannon upgrades, and custom level creation.
 
 ## Conventions
 
@@ -52,7 +54,7 @@ Project-specific features, controls, and implementation details are documented i
 
 - Create a new top-level directory with a clear kebab-case name.
 - Keep the project self-contained.
-- Add a project `README.md` in English.
+- Add a project `README.md`.
 - Add a local config example instead of committing private settings.
 - Document how to run, validate, and release the project.
 
@@ -65,3 +67,4 @@ Project-specific features, controls, and implementation details are documented i
 - [marvel-game README](./marvel-game/README.md)
 - [jumpjump-game README](./jumpjump-game/README.md)
 - [bad-north-game README](./bad-north-game/README.md)
+- [brick-breaker-game README](./brick-breaker-game/README.md)
