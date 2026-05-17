@@ -7,6 +7,7 @@ function AudioManager() {
   this.context = null;
   this.master = null;
   this.bgm = null;
+  this.bgmSrc = BGM_SRC;
   this.bgmPlaying = false;
   this.bgmMuted = false;
   this.enabled = true;
@@ -55,9 +56,40 @@ AudioManager.prototype.resume = function () {
   }
 };
 
-AudioManager.prototype.createBgm = function () {
+AudioManager.prototype.resolveBgmSource = function (src) {
+  return src || BGM_SRC;
+};
+
+AudioManager.prototype.destroyBgm = function () {
+  if (this.bgm) {
+    if (this.bgm.stop) {
+      try {
+        this.bgm.stop();
+      } catch (error) {}
+    }
+    if (this.bgm.destroy) {
+      try {
+        this.bgm.destroy();
+      } catch (error) {}
+    }
+  }
+  this.bgm = null;
+  this.bgmPlaying = false;
+};
+
+AudioManager.prototype.setBgmSource = function (src) {
+  var nextSrc = this.resolveBgmSource(src);
+  if (nextSrc === this.bgmSrc) {
+    return;
+  }
+  this.destroyBgm();
+  this.bgmSrc = nextSrc;
+};
+
+AudioManager.prototype.createBgm = function (src) {
   var bgm;
   var self = this;
+  this.setBgmSource(src);
   if (this.bgm) {
     return this.bgm;
   }
@@ -66,7 +98,7 @@ AudioManager.prototype.createBgm = function () {
   }
   try {
     bgm = wx.createInnerAudioContext();
-    bgm.src = BGM_SRC;
+    bgm.src = this.bgmSrc;
     bgm.loop = true;
     bgm.autoplay = false;
     bgm.volume = BGM_VOLUME;
@@ -103,12 +135,16 @@ AudioManager.prototype.createBgm = function () {
   return this.bgm;
 };
 
-AudioManager.prototype.playBgm = function () {
+AudioManager.prototype.playBgm = function (src) {
   var bgm;
-  if (this.bgmMuted || this.bgmPlaying) {
+  if (this.bgmMuted) {
     return;
   }
-  bgm = this.createBgm();
+  this.setBgmSource(src);
+  if (this.bgmPlaying) {
+    return;
+  }
+  bgm = this.createBgm(this.bgmSrc);
   if (!bgm || !bgm.play) {
     return;
   }
@@ -144,13 +180,7 @@ AudioManager.prototype.stopBgm = function () {
 };
 
 AudioManager.prototype.destroy = function () {
-  this.stopBgm();
-  if (this.bgm && this.bgm.destroy) {
-    try {
-      this.bgm.destroy();
-    } catch (error) {}
-  }
-  this.bgm = null;
+  this.destroyBgm();
   if (this.master) {
     try {
       this.master.disconnect();

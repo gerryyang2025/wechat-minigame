@@ -9,7 +9,7 @@ var STORAGE_CUSTOM = 'brick_breaker_custom_level_v1';
 var STORAGE_DEFAULT_LEVELS = 'brick_breaker_default_levels_v1';
 var STORAGE_EXPORTED_DEFAULT_LEVEL = 'brick_breaker_exported_default_level_v1';
 var SAVE_VERSION = 2;
-var DEFAULT_LEVEL_TEMPLATE_VERSION = 6;
+var DEFAULT_LEVEL_TEMPLATE_VERSION = 10;
 
 var WORLD_HEIGHT = 11.4;
 var BOARD_WIDTH = 4.86;
@@ -44,6 +44,8 @@ var POWER_CATCH_TOP = 0.34;
 var POWER_CATCH_BOTTOM = 0.18;
 var MAX_BALLS = 48;
 var MAX_ACTIVE_POWERUPS = 5;
+var MAX_QUEUED_POWERUPS = 32;
+var POWERUP_QUEUE_SPAWN_LIMIT = 2;
 var MAX_ACTIVE_EFFECTS = 28;
 var MAX_RENDER_PIXEL_RATIO = 1.5;
 var MAX_UI_PIXEL_RATIO = 2;
@@ -72,7 +74,6 @@ var DEFAULT_LEVELS = defaultLevelConfig.defaultLevels || [];
 var DEFAULT_LEVEL_COUNT = DEFAULT_LEVELS.length || 10;
 var COMPLETE_SLOWMO_DURATION = 1.05;
 var COMPLETE_SLOWMO_SCALE = 0.22;
-var COMPLETE_SCORE_BONUS = 200;
 var OPENING_GUIDE_DASHES = 18;
 var OPENING_GUIDE_SPEED = 0.22;
 
@@ -147,6 +148,23 @@ var DEFAULT_LEVEL_TYPE_SYMBOLS = {
   crimson: 'R',
   pink: 'P'
 };
+
+function hashDefaultLevelText(text) {
+  var hash = 2166136261;
+  var i;
+  for (i = 0; i < text.length; i += 1) {
+    hash ^= text.charCodeAt(i);
+    hash = typeof Math.imul === 'function' ? Math.imul(hash, 16777619) : hash * 16777619;
+  }
+  return (hash >>> 0).toString(36);
+}
+
+function formatDurationSeconds(seconds) {
+  var safeSeconds = Math.max(0, Math.floor(seconds || 0));
+  var minutes = Math.floor(safeSeconds / 60);
+  var remain = safeSeconds % 60;
+  return String(minutes).padStart(2, '0') + ':' + String(remain).padStart(2, '0');
+}
 
 function noop() {}
 
@@ -319,14 +337,11 @@ function BrickBreakerRuntime(options) {
   this.completionBrick = null;
 
   this.level = 1;
-  this.score = 0;
-  this.bestScore = 0;
+  this.runTimeActive = 0;
+  this.runTimeAnchor = 0;
+  this.runTimerRunning = false;
+  this.runDurationSeconds = 0;
   this.lives = STARTING_LIVES;
-  this.xp = 0;
-  this.xpNeed = 80;
-  this.cannonBaseLevel = 1;
-  this.cannonLevel = 1;
-  this.upgradeReady = false;
   this.currentRunCustom = false;
   this.runStats = this.createRunStats();
   this.customDesign = null;
@@ -343,13 +358,12 @@ function BrickBreakerRuntime(options) {
   this.balls = [];
   this.pendingBalls = [];
   this.powerups = [];
+  this.queuedPowerups = [];
   this.effects = [];
   this.nextId = 1;
   this.readyToShoot = true;
   this.openingGuideVisible = true;
   this.heavyTimer = 0;
-  this.ballArmy = 1;
-  this.ballDamage = 1;
   this.paddle = {
     x: 0,
     y: PADDLE_Y,
@@ -413,31 +427,19 @@ BrickBreakerRuntime.prototype.loadSave = function () {
 };
 
 BrickBreakerRuntime.prototype.resetGameProgress = function () {
-  this.bestScore = 0;
-  this.xp = 0;
-  this.xpNeed = 80;
-  this.cannonBaseLevel = 1;
-  this.resetCannonForRun();
+  this.resetShotState();
 };
 
 BrickBreakerRuntime.prototype.saveProgress = function () {
   utils.safeSetStorage(STORAGE_SAVE, {
-    version: SAVE_VERSION,
-    bestScore: 0,
-    cannonBaseLevel: 1,
-    xp: 0,
-    xpNeed: 80
+    version: SAVE_VERSION
   });
 };
 
-BrickBreakerRuntime.prototype.resetCannonForRun = function () {
-  this.cannonLevel = Math.max(1, this.cannonBaseLevel || 1);
-  this.ballArmy = Math.max(1, this.cannonLevel);
-  this.ballDamage = 1 + Math.floor((this.cannonLevel - 1) / 2);
+BrickBreakerRuntime.prototype.resetShotState = function () {
   this.heavyTimer = 0;
-  this.upgradeReady = this.xp >= this.xpNeed;
   if (this.paddle) {
-    this.paddle.w = Math.min(2.0, PADDLE_BASE_WIDTH + (this.cannonLevel - 1) * 0.06);
+    this.paddle.w = PADDLE_BASE_WIDTH;
   }
 };
 
@@ -693,11 +695,14 @@ BrickBreakerRuntime.prototype.resetTitlePreview = function () {
   this.completionBrick = null;
   this.resetGameProgress();
   this.level = 1;
-  this.score = 0;
+  this.runTimeActive = 0;
+  this.runTimeAnchor = this.elapsed || 0;
+  this.runTimerRunning = false;
+  this.runDurationSeconds = 0;
   this.lives = STARTING_LIVES;
   this.currentRunCustom = false;
   this.clearActiveEntities(true);
-  this.resetCannonForRun();
+  this.resetShotState();
   this.resetRunStats(false);
   this.readyToShoot = true;
   this.generateLevel(1, false);
@@ -706,13 +711,10 @@ BrickBreakerRuntime.prototype.resetTitlePreview = function () {
 
 BrickBreakerRuntime.prototype.createRunStats = function () {
   return {
-    score: 0,
+    durationSeconds: 0,
     bricks: 0,
     powers: 0,
-    xp: 0,
     shots: 0,
-    startLevel: this.cannonLevel || 1,
-    endLevel: this.cannonLevel || 1,
     completed: false,
     custom: false
   };
@@ -721,7 +723,6 @@ BrickBreakerRuntime.prototype.createRunStats = function () {
 BrickBreakerRuntime.prototype.resetRunStats = function (useCustom) {
   this.runStats = this.createRunStats();
   this.runStats.custom = !!useCustom;
-  this.runStats.startLevel = Math.max(1, this.cannonLevel || 1);
 };
 
 BrickBreakerRuntime.prototype.startRun = function (useCustom) {
@@ -730,18 +731,19 @@ BrickBreakerRuntime.prototype.startRun = function (useCustom) {
   this.completionBrick = null;
   this.resetGameProgress();
   this.level = 1;
-  this.score = 0;
+  this.startRunTimer();
   this.lives = STARTING_LIVES;
   this.currentRunCustom = !!useCustom;
   this.clearActiveEntities(true);
   this.readyToShoot = true;
   this.openingGuideVisible = true;
   this.paddle.x = 0;
+  this.resetShotState();
   this.resetRunStats(!!useCustom);
   this.generateLevel(1, !!useCustom);
   this.setMessage(useCustom ? '挑战自定义关卡' : '默认练习关卡', 1.6);
   this.audio.playClick();
-  this.audio.playBgm();
+  this.audio.playBgm(this.getLevelBgmSource(this.level, !!useCustom));
   this.syncScene();
 };
 
@@ -754,17 +756,54 @@ BrickBreakerRuntime.prototype.startNextLevel = function () {
   this.completionDelay = 0;
   this.completionBrick = null;
   this.level += 1;
+  this.resumeRunTimer();
   this.clearActiveEntities(true);
   this.readyToShoot = true;
   this.aimActive = false;
   this.touchMode = 'idle';
   this.openingGuideVisible = true;
   this.paddle.x = 0;
+  this.resetShotState();
   this.generateLevel(this.level, false);
   this.setMessage('第 ' + this.level + '/' + DEFAULT_LEVEL_COUNT + ' 关', 1.5);
   this.audio.playClick();
-  this.audio.playBgm();
+  this.audio.playBgm(this.getLevelBgmSource(this.level, false));
   this.syncScene();
+};
+
+BrickBreakerRuntime.prototype.startRunTimer = function () {
+  this.runTimeActive = 0;
+  this.runTimeAnchor = this.elapsed || 0;
+  this.runTimerRunning = true;
+  this.runDurationSeconds = 0;
+};
+
+BrickBreakerRuntime.prototype.resumeRunTimer = function () {
+  this.runTimeAnchor = this.elapsed || 0;
+  this.runTimerRunning = true;
+};
+
+BrickBreakerRuntime.prototype.freezeRunTimer = function () {
+  if (this.runTimerRunning) {
+    this.runTimeActive += Math.max(0, (this.elapsed || 0) - (this.runTimeAnchor || 0));
+    this.runTimerRunning = false;
+  }
+  this.runDurationSeconds = this.getRunDurationSeconds();
+  if (this.runStats) {
+    this.runStats.durationSeconds = this.runDurationSeconds;
+  }
+};
+
+BrickBreakerRuntime.prototype.getRunDurationSeconds = function () {
+  var seconds = this.runTimeActive || 0;
+  if (this.runTimerRunning) {
+    seconds += Math.max(0, (this.elapsed || 0) - (this.runTimeAnchor || 0));
+  }
+  return Math.max(0, Math.floor(seconds));
+};
+
+BrickBreakerRuntime.prototype.formatRunDuration = function (seconds) {
+  return formatDurationSeconds(seconds);
 };
 
 BrickBreakerRuntime.prototype.generateLevel = function (level, useCustom) {
@@ -774,7 +813,6 @@ BrickBreakerRuntime.prototype.generateLevel = function (level, useCustom) {
     return;
   }
   cells = this.cloneCells(this.getSavedDefaultCells(level) || this.buildGeneratedLevelCells(level));
-  this.ensureDefaultOpenRoutes(level, cells);
   this.addCellsToBricks(cells, level);
 };
 
@@ -794,6 +832,27 @@ BrickBreakerRuntime.prototype.createEmptyCells = function () {
 BrickBreakerRuntime.prototype.getDefaultLevelConfig = function (level) {
   var index = Math.max(0, Math.min(DEFAULT_LEVELS.length - 1, Math.round(level || 1) - 1));
   return DEFAULT_LEVELS[index] || null;
+};
+
+BrickBreakerRuntime.prototype.getLevelBgmSource = function (level, useCustom) {
+  var config;
+  if (useCustom) {
+    return '';
+  }
+  config = this.getDefaultLevelConfig(level);
+  return config && config.bgm ? config.bgm : '';
+};
+
+BrickBreakerRuntime.prototype.getDefaultLevelTemplateSignature = function (level) {
+  var config = this.getDefaultLevelConfig(level);
+  if (!config || !config.rows) {
+    return 'generated:' + String(level || 1);
+  }
+  return hashDefaultLevelText([
+    config.id || level || 1,
+    config.name || '',
+    config.rows.join('\n')
+  ].join('|'));
 };
 
 BrickBreakerRuntime.prototype.buildConfiguredLevelCells = function (level) {
@@ -874,240 +933,12 @@ BrickBreakerRuntime.prototype.getBrickHpForLevel = function (level) {
 BrickBreakerRuntime.prototype.getSavedDefaultCells = function (level) {
   var key = String(level);
   var design = this.defaultDesigns && this.defaultDesigns[key];
-  return design && design.cells && design.version === DEFAULT_LEVEL_TEMPLATE_VERSION ? design.cells : null;
-};
-
-BrickBreakerRuntime.prototype.ensureDefaultOpenRoutes = function (level, cells) {
-  if (level === 3 && !this.hasLevelTwoOpenRoute(cells)) {
-    this.carveLevelTwoFallbackRoute(cells);
-  }
-  this.repairUnreachableBreakables(cells);
-};
-
-BrickBreakerRuntime.prototype.hasLevelTwoOpenRoute = function (cells) {
-  return this.hasOpenCellPath(cells, [
-    { row: 5, col: 11 },
-    { row: 5, col: 12 },
-    { row: 5, col: 13 },
-    { row: 5, col: 14 }
-  ], [
-    { row: INITIAL_ROWS - 1, col: 11 },
-    { row: INITIAL_ROWS - 1, col: 12 },
-    { row: INITIAL_ROWS - 1, col: 13 },
-    { row: INITIAL_ROWS - 1, col: 14 }
-  ]);
-};
-
-BrickBreakerRuntime.prototype.hasOpenCellPath = function (cells, starts, goals) {
-  var queue = [];
-  var visited = {};
-  var goalSet = {};
-  var i;
-  var current;
-  var next;
-  var dirs = [
-    { dr: 1, dc: 0 },
-    { dr: -1, dc: 0 },
-    { dr: 0, dc: 1 },
-    { dr: 0, dc: -1 }
-  ];
-  for (i = 0; i < goals.length; i += 1) {
-    goalSet[goals[i].row + ':' + goals[i].col] = true;
-  }
-  for (i = 0; i < starts.length; i += 1) {
-    if (this.isOpenRouteCell(cells, starts[i].col, starts[i].row)) {
-      queue.push(starts[i]);
-      visited[starts[i].row + ':' + starts[i].col] = true;
-    }
-  }
-  while (queue.length) {
-    current = queue.shift();
-    if (goalSet[current.row + ':' + current.col]) {
-      return true;
-    }
-    for (i = 0; i < dirs.length; i += 1) {
-      next = {
-        row: current.row + dirs[i].dr,
-        col: current.col + dirs[i].dc
-      };
-      if (!visited[next.row + ':' + next.col] && this.isOpenRouteCell(cells, next.col, next.row)) {
-        visited[next.row + ':' + next.col] = true;
-        queue.push(next);
-      }
-    }
-  }
-  return false;
-};
-
-BrickBreakerRuntime.prototype.isOpenRouteCell = function (cells, col, row) {
-  return row >= 0 && row < ROWS && col >= 0 && col < COLS && !(cells[row] && cells[row][col]);
-};
-
-BrickBreakerRuntime.prototype.carveLevelTwoFallbackRoute = function (cells) {
-  var route = [
-    { row: 5, col: 11 },
-    { row: 6, col: 10 },
-    { row: 7, col: 9 },
-    { row: 8, col: 8 },
-    { row: 9, col: 8 },
-    { row: 10, col: 8 },
-    { row: 11, col: 8 },
-    { row: 12, col: 8 },
-    { row: 13, col: 9 },
-    { row: 14, col: 10 },
-    { row: 15, col: 11 },
-    { row: 16, col: 12 },
-    { row: 17, col: 12 },
-    { row: 18, col: 12 },
-    { row: 19, col: 12 },
-    { row: 20, col: 12 },
-    { row: INITIAL_ROWS - 1, col: 12 }
-  ];
-  var i;
-  for (i = 0; i < route.length; i += 1) {
-    this.clearRouteCell(cells, route[i].col, route[i].row);
-    this.clearRouteCell(cells, route[i].col + 1, route[i].row);
-  }
-};
-
-BrickBreakerRuntime.prototype.clearRouteCell = function (cells, col, row) {
-  if (row >= 0 && row < ROWS && col >= 0 && col < COLS && cells[row]) {
-    cells[row][col] = '';
-  }
-};
-
-BrickBreakerRuntime.prototype.clearUnreachableBreakables = function (cells) {
-  var unreachable = this.getUnreachableBreakableCells(cells);
-  var i;
-  for (i = 0; i < unreachable.length; i += 1) {
-    cells[unreachable[i].row][unreachable[i].col] = '';
-  }
-};
-
-BrickBreakerRuntime.prototype.repairUnreachableBreakables = function (cells) {
-  var guard;
-  var unreachable;
-  var reachable;
-  for (guard = 0; guard < 24; guard += 1) {
-    unreachable = this.getUnreachableBreakableCells(cells);
-    if (!unreachable.length) {
-      return;
-    }
-    reachable = this.getReachableCellsFromLaunch(cells);
-    if (!this.carveRouteToReachableCell(cells, unreachable[0], reachable)) {
-      break;
-    }
-  }
-  this.clearUnreachableBreakables(cells);
-};
-
-BrickBreakerRuntime.prototype.getUnreachableBreakableCells = function (cells) {
-  var reachable = this.getReachableCellsFromLaunch(cells);
-  var result = [];
-  var r;
-  var c;
-  var type;
-  for (r = 0; r < ROWS; r += 1) {
-    for (c = 0; c < COLS; c += 1) {
-      type = cells[r] && cells[r][c] ? cells[r][c] : '';
-      if (type && type !== 'wall' && !reachable[r + ':' + c]) {
-        result.push({ row: r, col: c, type: type });
-      }
-    }
-  }
-  return result;
-};
-
-BrickBreakerRuntime.prototype.getReachableCellsFromLaunch = function (cells) {
-  var queue = [];
-  var visited = {};
-  var dirs = [
-    { dr: 1, dc: 0 },
-    { dr: -1, dc: 0 },
-    { dr: 0, dc: 1 },
-    { dr: 0, dc: -1 }
-  ];
-  var c;
-  var i;
-  var current;
-  var next;
-  for (c = 0; c < COLS; c += 1) {
-    if (this.isLaunchReachableCell(cells, c, ROWS - 1)) {
-      queue.push({ row: ROWS - 1, col: c });
-      visited[(ROWS - 1) + ':' + c] = true;
-    }
-  }
-  while (queue.length) {
-    current = queue.shift();
-    for (i = 0; i < dirs.length; i += 1) {
-      next = {
-        row: current.row + dirs[i].dr,
-        col: current.col + dirs[i].dc
-      };
-      if (!visited[next.row + ':' + next.col] && this.isLaunchReachableCell(cells, next.col, next.row)) {
-        visited[next.row + ':' + next.col] = true;
-        queue.push(next);
-      }
-    }
-  }
-  return visited;
-};
-
-BrickBreakerRuntime.prototype.isLaunchReachableCell = function (cells, col, row) {
-  return row >= 0 && row < ROWS && col >= 0 && col < COLS && (!cells[row] || cells[row][col] !== 'wall');
-};
-
-BrickBreakerRuntime.prototype.carveRouteToReachableCell = function (cells, target, reachable) {
-  var nearest = this.findNearestReachableCell(target, reachable);
-  var row;
-  var col;
-  var step;
-  if (!nearest) {
-    return false;
-  }
-  row = target.row;
-  col = target.col;
-  step = nearest.col > col ? 1 : -1;
-  while (col !== nearest.col) {
-    this.clearWallRouteCell(cells, col, row);
-    col += step;
-  }
-  step = nearest.row > row ? 1 : -1;
-  while (row !== nearest.row) {
-    this.clearWallRouteCell(cells, col, row);
-    row += step;
-  }
-  this.clearWallRouteCell(cells, col, row);
-  return true;
-};
-
-BrickBreakerRuntime.prototype.findNearestReachableCell = function (target, reachable) {
-  var best = null;
-  var bestDistance = 99999;
-  var key;
-  var parts;
-  var row;
-  var col;
-  var distance;
-  for (key in reachable) {
-    if (Object.prototype.hasOwnProperty.call(reachable, key)) {
-      parts = key.split(':');
-      row = parseInt(parts[0], 10);
-      col = parseInt(parts[1], 10);
-      distance = Math.abs(target.row - row) + Math.abs(target.col - col);
-      if (distance < bestDistance) {
-        bestDistance = distance;
-        best = { row: row, col: col };
-      }
-    }
-  }
-  return best;
-};
-
-BrickBreakerRuntime.prototype.clearWallRouteCell = function (cells, col, row) {
-  if (row >= 0 && row < ROWS && col >= 0 && col < COLS && cells[row] && cells[row][col] === 'wall') {
-    cells[row][col] = '';
-  }
+  return design &&
+    design.cells &&
+    design.version === DEFAULT_LEVEL_TEMPLATE_VERSION &&
+    design.templateSignature === this.getDefaultLevelTemplateSignature(level) ?
+      design.cells :
+      null;
 };
 
 BrickBreakerRuntime.prototype.isIntroCorridorCell = function (col, row) {
@@ -1377,18 +1208,18 @@ BrickBreakerRuntime.prototype.planInitialSkillBricks = function (level) {
 
 BrickBreakerRuntime.prototype.findSkillCell = function (level, key, salt, plan, requireSpacing) {
   var best = null;
-  var bestScore = 9999;
+  var bestRank = 9999;
   var r;
   var c;
-  var score;
+  var rank;
   for (r = 3; r < INITIAL_ROWS - 3; r += 1) {
     for (c = 2; c < COLS - 2; c += 1) {
       if (!this.canUseSkillCell(c, r, level, plan, requireSpacing)) {
         continue;
       }
-      score = (c * 97 + r * 57 + level * 31 + salt * 43 + key.length * 19) % 997;
-      if (score < bestScore) {
-        bestScore = score;
+      rank = (c * 97 + r * 57 + level * 31 + salt * 43 + key.length * 19) % 997;
+      if (rank < bestRank) {
+        bestRank = rank;
         best = { col: c, row: r };
       }
     }
@@ -1761,6 +1592,8 @@ BrickBreakerRuntime.prototype.handleUiAction = function (key) {
     } else {
       this.startRun(this.currentRunCustom);
     }
+  } else if (key === 'endGame') {
+    this.endCurrentGame();
   } else if (key === 'title') {
     this.resetTitlePreview();
   } else if (key === 'saveLevel') {
@@ -1792,6 +1625,14 @@ BrickBreakerRuntime.prototype.handleUiAction = function (key) {
     type = key.slice(6);
     this.activateStoredPower(type);
   }
+};
+
+BrickBreakerRuntime.prototype.endCurrentGame = function () {
+  this.audio.playClick();
+  this.audio.stopBgm();
+  this.aimActive = false;
+  this.touchMode = 'idle';
+  this.resetTitlePreview();
 };
 
 BrickBreakerRuntime.prototype.updatePaddleFromScreen = function (screenX) {
@@ -1959,11 +1800,11 @@ BrickBreakerRuntime.prototype.fireSalvo = function (dir) {
 };
 
 BrickBreakerRuntime.prototype.getLaunchBallCount = function () {
-  return Math.max(1, this.ballArmy);
+  return 1;
 };
 
 BrickBreakerRuntime.prototype.spawnBall = function (dir, source) {
-  var damage = this.ballDamage + (this.heavyTimer > 0 ? 1 : 0);
+  var damage = this.heavyTimer > 0 ? 2 : 1;
   this.balls.push({
     id: 'ball-' + this.nextId,
     x: source && source.x !== undefined ? source.x : this.paddle.x,
@@ -2315,8 +2156,6 @@ BrickBreakerRuntime.prototype.isBreakableWallBrick = function (brick) {
 };
 
 BrickBreakerRuntime.prototype.destroyBrick = function (brick, suppressPowerDrop, keepFinalVisual) {
-  var scoreAward = brick.colorKey === 'crimson' ? 50 : 15;
-  var xpAward = brick.colorKey === 'crimson' ? 16 : 7;
   brick.hp = 0;
   this.clearBrickFromGrid(brick);
   if (keepFinalVisual) {
@@ -2324,12 +2163,8 @@ BrickBreakerRuntime.prototype.destroyBrick = function (brick, suppressPowerDrop,
   } else {
     this.clearBrickMesh(brick);
   }
-  this.score += scoreAward;
   this.runStats.bricks += 1;
-  this.runStats.xp += xpAward;
-  this.runStats.score = this.score;
   this.audio.playBrickBreak(brick.colorKey, brick.colorKey === 'crimson');
-  this.addXp(xpAward);
   if (suppressPowerDrop) {
     return;
   }
@@ -2338,26 +2173,24 @@ BrickBreakerRuntime.prototype.destroyBrick = function (brick, suppressPowerDrop,
   }
 };
 
-BrickBreakerRuntime.prototype.addXp = function (amount) {
-  this.xp += amount;
-  this.autoUpgradeCannon();
-};
-
-BrickBreakerRuntime.prototype.autoUpgradeCannon = function () {
-  while (this.xp >= this.xpNeed) {
-    this.upgradeCannon();
-  }
-  this.upgradeReady = false;
-};
-
 BrickBreakerRuntime.prototype.dropPowerup = function (x, y, forcedType) {
-  var type = forcedType || POWER_TYPES[(Math.floor(Math.abs(x) * 10 + y * 7 + this.score)) % POWER_TYPES.length];
+  var seed = Math.floor(Math.abs(x) * 10 + y * 7 + this.nextId + (this.runStats.bricks || 0) * 3);
+  var type = forcedType || POWER_TYPES[seed % POWER_TYPES.length];
   if (this.powerups.length >= MAX_ACTIVE_POWERUPS) {
-    if (!forcedType) {
-      return;
+    if (this.queuedPowerups.length >= MAX_QUEUED_POWERUPS) {
+      this.queuedPowerups.shift();
     }
-    this.removePowerupAt(0);
+    this.queuedPowerups.push({
+      x: x,
+      y: y,
+      type: type
+    });
+    return;
   }
+  this.spawnPowerupDrop(x, y, type);
+};
+
+BrickBreakerRuntime.prototype.spawnPowerupDrop = function (x, y, type) {
   this.powerups.push({
     id: 'power-' + this.nextId,
     x: x,
@@ -2370,9 +2203,23 @@ BrickBreakerRuntime.prototype.dropPowerup = function (x, y, forcedType) {
   this.audio.playPowerDrop(type);
 };
 
+BrickBreakerRuntime.prototype.releaseQueuedPowerups = function () {
+  var released = 0;
+  var power;
+  if (!this.balls.length && !this.pendingBalls.length) {
+    return;
+  }
+  while (this.queuedPowerups.length && this.powerups.length < MAX_ACTIVE_POWERUPS && released < POWERUP_QUEUE_SPAWN_LIMIT) {
+    power = this.queuedPowerups.shift();
+    this.spawnPowerupDrop(power.x, power.y, power.type);
+    released += 1;
+  }
+};
+
 BrickBreakerRuntime.prototype.updatePowerups = function (dt) {
   var i;
   var power;
+  this.releaseQueuedPowerups();
   for (i = this.powerups.length - 1; i >= 0; i -= 1) {
     if (this.state !== 'playing') {
       return;
@@ -2396,6 +2243,7 @@ BrickBreakerRuntime.prototype.updatePowerups = function (dt) {
       this.removePowerupAt(i);
     }
   }
+  this.releaseQueuedPowerups();
 };
 
 BrickBreakerRuntime.prototype.isPowerupCaught = function (power) {
@@ -2453,7 +2301,7 @@ BrickBreakerRuntime.prototype.updateHeavyBallState = function () {
     ball = this.balls[i];
     ball.heavy = heavyActive;
     ball.r = heavyActive ? Math.max(ball.r, BALL_RADIUS * 1.18) : BALL_RADIUS;
-    ball.damage = heavyActive ? Math.max(ball.damage || 1, this.ballDamage + 1) : this.ballDamage;
+    ball.damage = heavyActive ? Math.max(ball.damage || 1, 2) : 1;
     if (ball.mesh && ball.mesh.userData && ball.mesh.userData.body) {
       ball.mesh.userData.body.material = heavyActive && this.materials.heavyBall ? this.materials.heavyBall : this.materials.ball;
     }
@@ -2507,7 +2355,7 @@ BrickBreakerRuntime.prototype.triggerBomb = function () {
       !brick.wall &&
       Math.abs(brick.col - target.col) + Math.abs(brick.row - target.row) <= BOMB_GRID_RANGE
     ) {
-      this.hitBrick(brick, 4 + this.cannonLevel, true, true);
+      this.hitBrick(brick, 5, true, true);
     }
   }
   if (this.state !== 'playing') {
@@ -2561,8 +2409,11 @@ BrickBreakerRuntime.prototype.findNearestBrick = function (x, y) {
 };
 
 BrickBreakerRuntime.prototype.checkVolleyFinished = function () {
-  if (this.readyToShoot || this.balls.length || this.pendingBalls.length || this.powerups.length) {
+  if (this.readyToShoot || this.balls.length || this.pendingBalls.length) {
     return;
+  }
+  if (this.powerups.length || this.queuedPowerups.length) {
+    this.clearPowerupDrops();
   }
   if (this.tryCompleteLevel()) {
     return;
@@ -2610,8 +2461,7 @@ BrickBreakerRuntime.prototype.beginLevelCompleteSlowMotion = function () {
   this.aimActive = false;
   this.clearActiveEntities(false);
   this.runStats.completed = true;
-  this.runStats.score = this.score;
-  this.runStats.endLevel = this.cannonLevel;
+  this.freezeRunTimer();
   this.setMessage('关卡完成', COMPLETE_SLOWMO_DURATION);
   this.audio.playClear();
 };
@@ -2621,10 +2471,7 @@ BrickBreakerRuntime.prototype.finalizeLevelComplete = function () {
   this.state = hasNextLevel ? 'levelclear' : 'victory';
   this.completionDelay = 0;
   this.completionBrick = null;
-  this.score += COMPLETE_SCORE_BONUS;
   this.runStats.completed = true;
-  this.runStats.score = this.score;
-  this.runStats.endLevel = this.cannonLevel;
   if (!hasNextLevel) {
     this.resetGameProgress();
     this.saveProgress();
@@ -2640,8 +2487,7 @@ BrickBreakerRuntime.prototype.finishGame = function (won) {
   this.completionDelay = 0;
   this.completionBrick = null;
   this.runStats.completed = !!won;
-  this.runStats.score = this.score;
-  this.runStats.endLevel = this.cannonLevel;
+  this.freezeRunTimer();
   this.resetGameProgress();
   this.saveProgress();
   this.clearActiveEntities(true);
@@ -2652,19 +2498,6 @@ BrickBreakerRuntime.prototype.finishGame = function (won) {
   this.audio.stopBgm();
   this.audio.playGameOver();
   this.setMessage(won ? '全部清空' : '挑战结束', 2);
-};
-
-BrickBreakerRuntime.prototype.upgradeCannon = function () {
-  if (this.xp < this.xpNeed) {
-    return;
-  }
-  this.xp = Math.max(0, this.xp - this.xpNeed);
-  this.xpNeed = Math.round(this.xpNeed * 1.28 + 18);
-  this.cannonBaseLevel += 1;
-  this.resetCannonForRun();
-  this.upgradeReady = false;
-  this.setMessage('炮台升级 Lv.' + this.cannonBaseLevel, 1.4);
-  this.audio.playUpgrade();
 };
 
 BrickBreakerRuntime.prototype.removeBallAt = function (index) {
@@ -2683,12 +2516,17 @@ BrickBreakerRuntime.prototype.removePowerupAt = function (index) {
   this.powerups.splice(index, 1);
 };
 
+BrickBreakerRuntime.prototype.clearPowerupDrops = function () {
+  this.powerups = [];
+  this.queuedPowerups = [];
+  clearGroup(this.powerGroup);
+};
+
 BrickBreakerRuntime.prototype.clearActiveEntities = function (clearEffects) {
   this.balls = [];
   this.pendingBalls = [];
-  this.powerups = [];
+  this.clearPowerupDrops();
   clearGroup(this.ballGroup);
-  clearGroup(this.powerGroup);
   if (clearEffects) {
     this.effects = [];
     clearGroup(this.effectGroup);
@@ -2794,9 +2632,8 @@ BrickBreakerRuntime.prototype.enterDefaultEditor = function (level) {
   this.clearActiveEntities(true);
   this.readyToShoot = false;
   this.editorGrid = this.cloneCells(this.getSavedDefaultCells(targetLevel) || this.buildGeneratedLevelCells(targetLevel));
-  this.ensureDefaultOpenRoutes(targetLevel, this.editorGrid);
   this.editorGridToBricks();
-  this.setMessage('优化默认第 ' + targetLevel + ' 关', 1.8);
+  this.setMessage('编辑默认第 ' + targetLevel + ' 关', 1.8);
   this.audio.playClick();
 };
 
@@ -2887,10 +2724,10 @@ BrickBreakerRuntime.prototype.playCustomLevel = function () {
 BrickBreakerRuntime.prototype.saveDefaultLevel = function (silent) {
   var key = String(this.editorDefaultLevel || 1);
   var cells = this.cloneCells(this.editorGrid);
-  this.ensureDefaultOpenRoutes(this.editorDefaultLevel || 1, cells);
   this.defaultDesigns[key] = {
     cells: cells,
     version: DEFAULT_LEVEL_TEMPLATE_VERSION,
+    templateSignature: this.getDefaultLevelTemplateSignature(this.editorDefaultLevel || 1),
     updatedAt: Date.now ? Date.now() : 0
   };
   utils.safeSetStorage(STORAGE_DEFAULT_LEVELS, this.defaultDesigns);
@@ -2924,10 +2761,13 @@ BrickBreakerRuntime.prototype.buildDefaultLevelConfigSnippet = function (level, 
   var lines = [
     '  {',
     '    id: ' + level + ',',
-    '    name: ' + JSON.stringify(config && config.name ? config.name : '默认第' + level + '关') + ',',
-    '    rows: ['
+    '    name: ' + JSON.stringify(config && config.name ? config.name : '默认第' + level + '关') + ','
   ];
   var i;
+  if (config && config.bgm) {
+    lines.push('    bgm: ' + JSON.stringify(config.bgm) + ',');
+  }
+  lines.push('    rows: [');
   for (i = 0; i < rows.length; i += 1) {
     lines.push("      '" + rows[i] + "'" + (i === rows.length - 1 ? '' : ','));
   }
@@ -2957,7 +2797,6 @@ BrickBreakerRuntime.prototype.exportDefaultLevelConfig = function () {
     return '';
   }
   cells = this.cloneCells(this.editorGrid);
-  this.ensureDefaultOpenRoutes(level, cells);
   snippet = this.buildDefaultLevelConfigSnippet(level, cells);
   this.writeExportedDefaultLevelConfig(level, snippet);
   this.setMessage('默认第 ' + level + ' 关配置已输出', 1.8);
@@ -2982,7 +2821,7 @@ BrickBreakerRuntime.prototype.playEditedDefaultLevel = function () {
   this.completionBrick = null;
   this.resetGameProgress();
   this.level = this.editorMode === 'default' ? this.editorDefaultLevel : 1;
-  this.score = 0;
+  this.startRunTimer();
   this.lives = STARTING_LIVES;
   this.currentRunCustom = false;
   this.clearActiveEntities(true);
@@ -2993,7 +2832,7 @@ BrickBreakerRuntime.prototype.playEditedDefaultLevel = function () {
   this.generateLevel(this.level, false);
   this.setMessage('试玩默认第 ' + this.level + ' 关', 1.6);
   this.audio.playClick();
-  this.audio.playBgm();
+  this.audio.playBgm(this.getLevelBgmSource(this.level, false));
   this.syncScene();
 };
 
@@ -3392,7 +3231,13 @@ BrickBreakerRuntime.prototype.syncEraseEffect = function (effect, ratio) {
 };
 
 BrickBreakerRuntime.prototype.syncPaddle = function () {
+  var hideOnResult;
   if (!this.paddleMesh) {
+    return;
+  }
+  hideOnResult = this.state === 'editor' || this.state === 'gameover' || this.state === 'victory' || this.state === 'levelclear';
+  this.paddleMesh.visible = !hideOnResult;
+  if (hideOnResult) {
     return;
   }
   this.paddleMesh.position.set(this.paddle.x, this.paddle.y, 0.18);
@@ -3442,6 +3287,7 @@ BrickBreakerRuntime.prototype.getUiFrameKey = function () {
   var guideTicks = this.state === 'playing' && this.readyToShoot && this.openingGuideVisible ? Math.floor(this.elapsed * 5) : 0;
   var aimKey = '';
   var stats = this.runStats || {};
+  var durationSeconds = this.getRunDurationSeconds();
   if (this.state === 'playing' && this.readyToShoot && this.aimActive && this.aimPoint) {
     aimKey = Math.round(this.aimPoint.x * 120) + ':' + Math.round(this.aimPoint.y * 120);
   }
@@ -3456,19 +3302,14 @@ BrickBreakerRuntime.prototype.getUiFrameKey = function () {
     messageTicks,
     completionTicks,
     guideTicks,
-    this.xp,
-    this.xpNeed,
     this.lives,
     this.getLaunchBallCount(),
     Math.ceil(this.heavyTimer || 0),
     this.editorTool,
-    this.score,
+    durationSeconds,
     stats.bricks || 0,
     stats.powers || 0,
-    stats.xp || 0,
-    stats.shots || 0,
-    stats.endLevel || 0,
-    this.upgradeReady ? 1 : 0
+    stats.shots || 0
   ].join('|');
 };
 
@@ -3818,20 +3659,56 @@ BrickBreakerRuntime.prototype.drawTitle = function (ctx) {
 
 BrickBreakerRuntime.prototype.drawPlayingUi = function (ctx) {
   var bottom = this.height - this.getSafeBottom() - 18;
-  var panelY = bottom - 48;
-  var xpRatio = utils.clamp(this.xp / this.xpNeed, 0, 1);
-  utils.fillRoundRect(ctx, 20, panelY, this.width - 40, 48, 15, 'rgba(6,16,31,0.72)');
-  utils.fillRoundRect(ctx, 34, panelY + 34, this.width - 68, 7, 4, 'rgba(255,255,255,0.15)');
-  utils.fillRoundRect(ctx, 34, panelY + 34, (this.width - 68) * xpRatio, 7, 4, this.upgradeReady ? '#facc15' : '#60a5fa');
-  utils.setTextStyle(ctx, 12, '800', 'rgba(236,246,255,0.86)', 'left', 'middle');
-  ctx.fillText('经验 ' + this.xp + '/' + this.xpNeed, 34, panelY + 20);
+  var panelH = 58;
+  var panelY = bottom - panelH;
+  var endRect;
+  var infoX = 34;
+  var infoW;
+  var topY = panelY + 19;
+  var bottomY = panelY + 40;
+  var timeLabel = '用时 ' + this.formatRunDuration(this.getRunDurationSeconds());
+  var levelLabel = this.currentRunCustom ? '自定义' : '第 ' + this.level + '/' + DEFAULT_LEVEL_COUNT + ' 关';
+  var lifeLabel = '生命 ' + this.lives;
+  utils.fillRoundRect(ctx, 20, panelY, this.width - 40, panelH, 16, 'rgba(6,16,31,0.76)');
+  if (this.state === 'playing') {
+    endRect = {
+      x: 28,
+      y: panelY + 15,
+      width: 74,
+      height: 28
+    };
+    this.touchRects.endGame = endRect;
+    this.drawGameplayActionButton(ctx, endRect, '结束游戏', '#1f2937');
+    infoX = endRect.x + endRect.width + 12;
+  }
+  infoW = this.width - infoX - 34;
+  if (this.width < 390) {
+    timeLabel = this.formatRunDuration(this.getRunDurationSeconds());
+  }
+
+  utils.setTextStyle(ctx, 11, '800', 'rgba(236,246,255,0.88)', 'left', 'middle');
+  ctx.fillText(timeLabel, infoX, topY);
   utils.setTextStyle(ctx, 12, '900', '#fff159', 'center', 'middle');
-  ctx.fillText(this.currentRunCustom ? '生命 ' + this.lives : '第 ' + this.level + '/' + DEFAULT_LEVEL_COUNT + ' 关 · 生命 ' + this.lives, this.width / 2, panelY + 20);
+  ctx.fillText(levelLabel, infoX + infoW * 0.52, topY);
+  utils.setTextStyle(ctx, 12, '900', '#fff159', 'left', 'middle');
+  ctx.fillText(lifeLabel, infoX, bottomY);
   utils.setTextStyle(ctx, 12, '800', '#ffffff', 'right', 'middle');
-  ctx.fillText('弹球 ' + this.getLaunchBallCount(), this.width - 34, panelY + 20);
+  ctx.fillText('弹球 1', this.width - 34, bottomY);
   if (this.heavyTimer > 0) {
     this.drawGameplayStatusChip(ctx, '重型弹 ' + Math.ceil(this.heavyTimer) + 's', this.width - 92, panelY - 22, '#ffd166');
   }
+};
+
+BrickBreakerRuntime.prototype.drawGameplayActionButton = function (ctx, rect, label, color) {
+  var x = Math.round(rect.x);
+  var y = Math.round(rect.y);
+  var w = Math.round(rect.width);
+  var h = Math.round(rect.height);
+  utils.fillRoundRect(ctx, x + 2, y + 2, w, h, 10, 'rgba(0,0,0,0.48)');
+  utils.fillRoundRect(ctx, x, y, w, h, 10, color || '#1f2937');
+  utils.strokeRoundRect(ctx, x, y, w, h, 10, 'rgba(255,255,255,0.48)', 1.2);
+  utils.setTextStyle(ctx, 12, '900', '#ffffff', 'center', 'middle');
+  ctx.fillText(label, x + w / 2, y + h / 2);
 };
 
 BrickBreakerRuntime.prototype.drawGameplayStatusChip = function (ctx, label, centerX, centerY, color) {
@@ -3901,7 +3778,7 @@ BrickBreakerRuntime.prototype.drawHelp = function (ctx) {
 
   y = this.drawHelpSectionTitle(ctx, contentX, y, '目标与操作');
   y = this.drawHelpBullet(ctx, contentX, y, contentW, '#ffffff', '按住拖动瞄准，虚线会显示首次碰撞和一次反弹路线；松手发射弹球。');
-  y = this.drawHelpBullet(ctx, contentX, y, contentW, '#ffffff', '默认 1 颗白球，炮台升级和道具会增加弹球数量、伤害和挡板宽度。');
+  y = this.drawHelpBullet(ctx, contentX, y, contentW, '#ffffff', '每关开局固定 1 颗白球，道具只影响当前回合；进入下一关会回到初始发射状态。');
 
   y = this.drawHelpSectionTitle(ctx, contentX, y + 4, '砖块规则');
   y = this.drawHelpBullet(ctx, contentX, y, contentW, '#dbeafe', '绿色普通砖被击中后清空；灰色墙体默认只反弹，重弹可击碎内部灰墙，边界墙仍会保护棋盘。');
@@ -3916,8 +3793,8 @@ BrickBreakerRuntime.prototype.drawHelp = function (ctx) {
   skillY = this.drawHelpSkill(ctx, contentX, skillY, contentW, 'laser', '粉色激光', '贯穿挡板正上方一列。');
   y = skillY;
 
-  y = this.drawHelpSectionTitle(ctx, contentX, y + 4, '成长与自定义');
-  y = this.drawHelpBullet(ctx, contentX, y, contentW, '#dbeafe', '击碎砖块获得经验，经验满后自动升级炮台。');
+  y = this.drawHelpSectionTitle(ctx, contentX, y + 4, '关卡与自定义');
+  y = this.drawHelpBullet(ctx, contentX, y, contentW, '#dbeafe', '默认关卡逐步介绍五种道具，之后进入多道具复合关卡。');
   y = this.drawHelpBullet(ctx, contentX, y, contentW, '#dbeafe', '标题页进入自定义关卡，可放置普通砖、技能砖、墙体并保存挑战。');
 
   closeRect = {
@@ -4098,12 +3975,10 @@ BrickBreakerRuntime.prototype.drawResult = function (ctx) {
   utils.strokeRoundRect(ctx, panelX, panelY, panelW, panelH, 18, '#050505', 2.8);
   utils.setTextStyle(ctx, 14, '900', '#111827', 'center', 'middle');
   ctx.fillText('本局结算', this.width / 2, panelY + 20);
-  this.drawSettlementItem(ctx, leftColX, rowY, '本局得分', this.score, '#0f172a');
+  this.drawSettlementItem(ctx, leftColX, rowY, '本局用时', this.formatRunDuration(stats.durationSeconds || this.getRunDurationSeconds()), '#0f172a');
   this.drawSettlementItem(ctx, rightColX, rowY, '发射次数', stats.shots, '#0f172a');
   this.drawSettlementItem(ctx, leftColX, rowY + 54, '击碎方块', stats.bricks, '#16a34a');
-  this.drawSettlementItem(ctx, rightColX, rowY + 54, '获得经验', '+' + stats.xp, '#2563eb');
-  this.drawSettlementItem(ctx, leftColX, rowY + 108, '收集道具', stats.powers, '#d97706');
-  this.drawSettlementItem(ctx, rightColX, rowY + 108, '炮台等级', 'Lv.' + (stats.endLevel || this.cannonLevel), '#7c3aed');
+  this.drawSettlementItem(ctx, rightColX, rowY + 54, '收集道具', stats.powers, '#d97706');
   ctx.restore();
   this.touchRects.restart = this.createButtonRect(this.width / 2, panelY + panelH + 18, UI_BUTTON_WIDTH);
   this.touchRects.editor = this.createButtonRect(this.width / 2, panelY + panelH + 70, UI_BUTTON_WIDTH);
@@ -4305,10 +4180,8 @@ BrickBreakerRuntime.prototype.handleResize = function (windowInfo) {
 BrickBreakerRuntime.prototype.getSnapshot = function () {
   return {
     level: this.level,
-    score: this.score,
-    bestScore: this.bestScore,
+    durationSeconds: this.getRunDurationSeconds(),
     lives: this.lives,
-    cannonLevel: this.cannonLevel,
     runStats: this.runStats
   };
 };
