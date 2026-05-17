@@ -28,6 +28,24 @@ function finishCompletionSlowMo(runtime) {
   run(runtime, 36, 0.035);
 }
 
+function clearCurrentLevel(runtime) {
+  runtime.bricks.forEach(function (brick) {
+    if (!brick.wall) {
+      brick.hp = 0;
+    }
+  });
+  runtime.readyToShoot = false;
+  runtime.balls = [];
+  runtime.pendingBalls = [];
+  runtime.checkVolleyFinished();
+}
+
+function advanceToLevel(runtime, level) {
+  while (runtime.level < level) {
+    runtime.startNextLevel();
+  }
+}
+
 function fakeGroup(count) {
   var group = {
     children: [],
@@ -43,6 +61,18 @@ function fakeGroup(count) {
     group.children.push({ id: 'child-' + i });
   }
   return group;
+}
+
+function touchEvent(x, y, timeStamp) {
+  return {
+    timeStamp: timeStamp,
+    changedTouches: [
+      {
+        clientX: x,
+        clientY: y
+      }
+    ]
+  };
 }
 
 var originalWx = global.wx;
@@ -99,6 +129,25 @@ runtime.handleUiAction('help');
 assert(runtime.state === 'help', 'Independent help screen opens instead of overlaying the play field legend');
 runtime.handleUiAction('closeHelp');
 assert(runtime.state === 'playing', 'Help screen returns to the current game state');
+runtime.paddle.x = 0;
+runtime.readyToShoot = true;
+runtime.handleTouchStart(touchEvent(380, 720, 1000));
+assert(Math.abs(runtime.paddle.x) < 0.0001, 'Touch start records drag state without snapping the paddle to the finger');
+runtime.handleTouchCancel();
+runtime.readyToShoot = false;
+runtime.paddle.x = 0;
+runtime.handleTouchStart(touchEvent(200, 720, 2000));
+runtime.handleTouchMove(touchEvent(210, 720, 2032));
+var slowDragDelta = runtime.paddle.x;
+runtime.handleTouchCancel();
+runtime.paddle.x = 0;
+runtime.handleTouchStart(touchEvent(200, 720, 3000));
+runtime.handleTouchMove(touchEvent(210, 720, 3008));
+var fastDragDelta = runtime.paddle.x;
+assert(slowDragDelta > runtime.screenDeltaToWorld(10) && fastDragDelta > slowDragDelta, 'Relative paddle drag amplifies movement and applies extra gain to faster swipes');
+runtime.handleTouchCancel();
+runtime.readyToShoot = true;
+runtime.paddle.x = 0;
 var metrics = runtime.getBoardMetrics();
 assert(metrics.cols >= 23 && metrics.brickWidth < 0.24, 'Board uses many small aligned brick cells');
 assert(metrics.boardWidth < metrics.viewWidth && runtime.bricks.every(function (brick) {
@@ -119,6 +168,32 @@ var skillCount = runtime.bricks.filter(function (brick) {
 }).length;
 assert(normalCount > skillCount * 6, 'Default level is dominated by ordinary bricks with only a few skill bricks');
 assert(skillCount === 5, 'Starter level includes one capped brick for each special power-up type');
+function brickAt(testRuntime, row, col) {
+  return testRuntime.bricks.filter(function (brick) {
+    return brick.row === row && brick.col === col && brick.hp > 0;
+  })[0] || null;
+}
+
+function cellsFromRuntime(testRuntime) {
+  var rows = testRuntime.brickGrid.length;
+  var cols = testRuntime.brickGrid[0] ? testRuntime.brickGrid[0].length : 0;
+  var cells = [];
+  var r;
+  var c;
+  var brick;
+  for (r = 0; r < rows; r += 1) {
+    cells[r] = [];
+    for (c = 0; c < cols; c += 1) {
+      brick = testRuntime.brickGrid[r][c];
+      cells[r][c] = brick && brick.hp > 0 ? brick.colorKey : '';
+    }
+  }
+  return cells;
+}
+
+assert(runtime.level === 1 && runtime.getBreakableCount() < 180 && runtime.getBreakableCount() > 100, 'New first default level is an easier intro stage with fewer breakable bricks');
+assert(!brickAt(runtime, 5, 12) && !brickAt(runtime, 16, 12) && brickAt(runtime, 6, 5) && brickAt(runtime, 6, 5).wall && brickAt(runtime, 9, 14) && brickAt(runtime, 9, 14).wall, 'Intro level keeps wide open lanes with a few simple reflective wall shelves');
+assert(runtime.getUnreachableBreakableCells(cellsFromRuntime(runtime)).length === 0, 'Intro level has no unreachable green or skill bricks');
 
 function assertSkillDrops(testRuntime, prefix) {
   Object.keys(skillPowerByColor).forEach(function (colorKey) {
@@ -318,6 +393,55 @@ runtime.updatePowerups(0.04);
 assert(runtime.powerups.length === 0 && runtime.heavyTimer > 0, 'Falling power-up is caught by the paddle and applies its effect');
 assert(caughtHeavyBall.heavy === true && caughtHeavyBall.damage > 1 && caughtHeavyBall.r > 0.047, 'Heavy power immediately upgrades active balls instead of only future shots');
 
+var heavyWallRuntime = new Runtime({
+  headless: true,
+  width: 430,
+  height: 932,
+  pixelRatio: 1,
+  runtimeInfo: {}
+});
+heavyWallRuntime.init();
+heavyWallRuntime.startRun(false);
+var heavyMetrics = heavyWallRuntime.getBoardMetrics();
+var crushWall = heavyWallRuntime.bricks.filter(function (brick) {
+  return heavyWallRuntime.isBreakableWallBrick(brick) && brick.hp > 0;
+})[0];
+var protectedWall = heavyWallRuntime.bricks.filter(function (brick) {
+  return brick.wall && brick.row === 0 && brick.hp > 0;
+})[0];
+heavyWallRuntime.bricks.forEach(function (brick) {
+  if (brick !== crushWall && brick !== protectedWall) {
+    brick.hp = 0;
+  }
+});
+var heavyWallBall = {
+  prevX: crushWall.x - crushWall.w / 2 - heavyMetrics.brickWidth * 0.65,
+  prevY: crushWall.y,
+  x: crushWall.x + crushWall.w / 2 + heavyMetrics.brickWidth * 0.65,
+  y: crushWall.y,
+  vx: 8,
+  vy: 0,
+  r: heavyMetrics.brickWidth * 0.22,
+  damage: 2,
+  heavy: true,
+  wallBounceCount: 0,
+  stuckTimer: 0,
+  age: 0
+};
+heavyWallRuntime.resolveBrickCollision(heavyWallBall);
+assert(crushWall.hp <= 0 && !heavyWallRuntime.brickGrid[crushWall.row][crushWall.col], 'Heavy power breaks internal gray wall bricks');
+var protectedWallHp = protectedWall.hp;
+heavyWallRuntime.hitBrick(protectedWall, 999, true);
+assert(protectedWall.hp === protectedWallHp, 'Heavy power keeps perimeter walls indestructible so balls cannot leave the board');
+heavyWallRuntime.balls = [];
+heavyWallRuntime.heavyTimer = 7;
+heavyWallRuntime.spawnBall({ x: 0, y: 1 });
+var timedHeavyBall = heavyWallRuntime.balls[0];
+var timedHeavyRadius = timedHeavyBall.r;
+heavyWallRuntime.heavyTimer = 0;
+heavyWallRuntime.updateHeavyBallState();
+assert(timedHeavyBall.heavy === false && timedHeavyBall.r < timedHeavyRadius && timedHeavyBall.damage === heavyWallRuntime.ballDamage, 'Heavy power reverts active balls after the timer ends');
+
 var chainRuntime = new Runtime({
   headless: true,
   width: 430,
@@ -333,9 +457,18 @@ chainRuntime.addBrick(11, 21, 'blue', 1, false);
 chainRuntime.addBrick(12, 21, 'gold', 1, false);
 chainRuntime.addBrick(13, 21, 'violet', 1, false);
 chainRuntime.addBrick(12, 23, 'green', 1, false);
+chainRuntime.addBrick(12, 20, 'green', 1, false);
+chainRuntime.addBrick(13, 20, 'green', 1, false);
+chainRuntime.addBrick(15, 21, 'green', 1, false);
+var adjacentBomb = brickAt(chainRuntime, 20, 12);
+var diagonalBomb = brickAt(chainRuntime, 20, 13);
+var justOutsideBomb = brickAt(chainRuntime, 21, 15);
 chainRuntime.paddle.x = 0;
 chainRuntime.triggerBomb();
 assert(chainRuntime.powerups.length === 0, 'Bomb-cleared skill bricks do not spawn secondary power-up piles');
+assert(adjacentBomb.hp <= 0, 'Bomb clears an orthogonally adjacent brick');
+assert(diagonalBomb.hp > 0, 'Bomb no longer clears diagonal bricks');
+assert(justOutsideBomb.hp > 0, 'Bomb range stays local and does not clear bricks several cells away');
 
 var beforeSplit = runtime.balls.length;
 runtime.splitBalls();
@@ -420,13 +553,94 @@ assert(runtime.state === 'completing' && runtime.message.indexOf('关卡完成')
 assert(runtime.bricks.length === oldBrickCount, 'Completion slow motion keeps the playfield visible before settlement');
 assert(bgmStoppedOnResult === false, 'Completion slow motion keeps background music until settlement');
 finishCompletionSlowMo(runtime);
-assert(runtime.state === 'victory', 'Completion slow motion finishes on the settlement screen');
-assert(runtime.bricks.length === 0, 'Completion result clears the playfield so no new green row remains visible');
+assert(runtime.state === 'levelclear', 'First default level completion opens the next-level settlement state');
+assert(runtime.bricks.length === 0, 'Level transition clears the completed playfield so no new green row remains visible');
+assert(bgmStoppedOnResult === true, 'Level completion stops background music before the next-level prompt');
+assert(runtime.runStats.completed === true && runtime.runStats.score === runtime.score, 'Level-clear settlement marks the level as completed and stores the score');
+runtime.handleUiAction('restart');
+assert(runtime.state === 'playing' && runtime.level === 2 && runtime.getBreakableCount() > 0, 'Next-level action starts the second default level');
+assert(runtime.getBreakableCount() < 280, 'Second default level keeps the previous reference maze as the mid-stage');
+assert(!brickAt(runtime, 3, 10) && !brickAt(runtime, 10, 4) && !brickAt(runtime, 18, 12) && !brickAt(runtime, 19, 20), 'Second default level carves the reference-style top, left, lower, and right corridor gaps');
+assert(brickAt(runtime, 5, 10) && brickAt(runtime, 5, 10).wall && brickAt(runtime, 6, 6) && brickAt(runtime, 6, 6).wall && brickAt(runtime, 16, 14) && brickAt(runtime, 16, 14).wall && brickAt(runtime, 19, 12) && brickAt(runtime, 19, 12).wall, 'Second default level uses gray walls to outline the reference maze corridor');
+assert(runtime.getUnreachableBreakableCells(cellsFromRuntime(runtime)).length === 0, 'Second default level has no unreachable green or skill bricks');
+runtime.bricks.forEach(function (brick) {
+  if (!brick.wall) {
+    brick.hp = 0;
+  }
+});
+runtime.readyToShoot = false;
+runtime.balls = [];
+runtime.pendingBalls = [];
+runtime.checkVolleyFinished();
+assert(runtime.state === 'completing', 'Clearing the second default level also starts completion slow motion');
+finishCompletionSlowMo(runtime);
+assert(runtime.state === 'levelclear', 'Second default level completion opens the final next-level prompt');
+runtime.handleUiAction('restart');
+assert(runtime.state === 'playing' && runtime.level === 3 && runtime.getBreakableCount() > 0, 'Next-level action starts the third default fish level');
+assert(runtime.getBreakableCount() < 210, 'Third default fish level is lighter than a fully filled template');
+assert(!brickAt(runtime, 10, 12) && !brickAt(runtime, 8, 6) && !brickAt(runtime, 21, 12) && brickAt(runtime, 10, 13) && brickAt(runtime, 10, 13).colorKey === 'crimson', 'Third default level carves a fish-shaped body and keeps a central skill brick');
+assert(brickAt(runtime, 3, 6) && brickAt(runtime, 3, 6).colorKey === 'blue', 'Third default level keeps all planned skill bricks visible instead of hiding them behind walls');
+assert(brickAt(runtime, 4, 11) && brickAt(runtime, 4, 11).wall && brickAt(runtime, 8, 5) && brickAt(runtime, 8, 5).wall && brickAt(runtime, 12, 21) && brickAt(runtime, 12, 21).wall, 'Third default level uses gray walls to outline the fish body and tail');
+assert(!brickAt(runtime, 20, 12) && !brickAt(runtime, 21, 12) && !brickAt(runtime, 10, 7), 'Third default level keeps the fish body and lower exit open instead of sealing all routes with walls');
+assert(runtime.hasLevelTwoOpenRoute(runtime.buildGeneratedLevelCells(3)), 'Third default level has a connected open route from the fish body to the lower exit');
+var rawFishLevelCells = runtime.buildGeneratedLevelCells(3);
+assert(runtime.getUnreachableBreakableCells(rawFishLevelCells).length === 0, 'Configured third-level fish template stores a playable map with no dead green regions');
+var repairedFishLevelCells = runtime.cloneCells(rawFishLevelCells);
+runtime.ensureDefaultOpenRoutes(3, repairedFishLevelCells);
+assert(runtime.getUnreachableBreakableCells(repairedFishLevelCells).length === 0, 'Third default level repair makes every breakable brick reachable from the launch area');
+assert(runtime.getUnreachableBreakableCells(cellsFromRuntime(runtime)).length === 0, 'Generated third default level contains no unreachable green or skill bricks');
+var sealedFishLevel = runtime.buildGeneratedLevelCells(3);
+sealedFishLevel[20][12] = 'wall';
+sealedFishLevel[20][13] = 'wall';
+sealedFishLevel[21][11] = 'wall';
+sealedFishLevel[21][12] = 'wall';
+sealedFishLevel[21][13] = 'wall';
+sealedFishLevel[21][14] = 'wall';
+assert(!runtime.hasLevelTwoOpenRoute(sealedFishLevel), 'Sealed third-level fish cells fail the open-route check before generation repair');
+runtime.defaultDesigns['3'] = {
+  cells: sealedFishLevel,
+  version: 6,
+  updatedAt: 1
+};
+runtime.generateLevel(3, false);
+assert(runtime.hasLevelTwoOpenRoute(runtime.cloneCells(runtime.defaultDesigns['3'].cells)) === false && !brickAt(runtime, 21, 12) && !brickAt(runtime, 20, 12), 'Generation repairs a saved third level that accidentally seals the lower route');
+assert(runtime.getUnreachableBreakableCells(cellsFromRuntime(runtime)).length === 0, 'Generation repairs saved third-level defaults so no dead green regions remain');
+runtime.defaultDesigns = {};
+clearCurrentLevel(runtime);
+assert(runtime.state === 'completing', 'Clearing the third default level also starts completion slow motion');
+finishCompletionSlowMo(runtime);
+assert(runtime.state === 'levelclear', 'Third default level completion continues into advanced default levels');
+var previousAdvancedWork = 0;
+var advancedLevel;
+var advancedBreakables;
+var advancedHp;
+for (advancedLevel = 4; advancedLevel <= 10; advancedLevel += 1) {
+  runtime.handleUiAction('restart');
+  assert(runtime.state === 'playing' && runtime.level === advancedLevel, 'Next-level action starts advanced default level ' + advancedLevel);
+  assert(runtime.getUnreachableBreakableCells(cellsFromRuntime(runtime)).length === 0, 'Advanced default level ' + advancedLevel + ' has no unreachable green or skill bricks');
+  advancedBreakables = runtime.bricks.filter(function (brick) {
+    return !brick.wall && brick.hp > 0;
+  });
+  advancedHp = advancedBreakables.reduce(function (maxHp, brick) {
+    return Math.max(maxHp, brick.hp);
+  }, 0);
+  assert(advancedBreakables.length >= 140 && advancedBreakables.length <= 230, 'Advanced default level ' + advancedLevel + ' keeps a readable dense brick field');
+  assert(advancedBreakables.filter(function (brick) {
+    return Object.prototype.hasOwnProperty.call(skillPowerByColor, brick.colorKey);
+  }).length === 5, 'Advanced default level ' + advancedLevel + ' keeps one skill brick for each power-up');
+  assert(advancedBreakables.length * advancedHp > previousAdvancedWork, 'Advanced default level ' + advancedLevel + ' increases total clear pressure over the previous advanced level');
+  previousAdvancedWork = advancedBreakables.length * advancedHp;
+  clearCurrentLevel(runtime);
+  assert(runtime.state === 'completing', 'Clearing advanced default level ' + advancedLevel + ' starts completion slow motion');
+  finishCompletionSlowMo(runtime);
+  assert(runtime.state === (advancedLevel < 10 ? 'levelclear' : 'victory'), 'Advanced default level ' + advancedLevel + ' reaches the expected result state');
+}
+assert(runtime.state === 'victory' && runtime.bricks.length === 0, 'Final default level completion reaches the victory settlement');
 assert(runtime.xp === 0 && runtime.cannonLevel === 1 && runtime.getLaunchBallCount() === 1, 'Victory resets growth data for the next run while settlement stats stay available');
-assert(bgmStoppedOnResult === true, 'Victory completion also stops background music on the settlement screen');
 assert(runtime.runStats.completed === true && runtime.runStats.score === runtime.score, 'Victory settlement marks the run as completed and stores the final score');
 runtime.handleUiAction('restart');
-assert(runtime.state === 'playing' && runtime.level === 1 && runtime.getBreakableCount() > 0, 'Restart replays the same default map instead of advancing to another level');
+assert(runtime.state === 'playing' && runtime.level === 1 && runtime.getBreakableCount() > 0, 'Restart after final victory starts the default campaign from level one');
+advanceToLevel(runtime, 10);
 var finalBreakables = runtime.bricks.filter(function (brick) {
   return !brick.wall && brick.hp > 0;
 });
@@ -440,6 +654,7 @@ assert(runtime.balls.length === 0 && runtime.powerups.length === 0, 'Completion 
 finishCompletionSlowMo(runtime);
 assert(runtime.state === 'victory' && runtime.bricks.length === 0, 'Final-brick completion clears residual wall and top-row bricks after slow motion');
 runtime.handleUiAction('restart');
+advanceToLevel(runtime, 10);
 finalBreakables = runtime.bricks.filter(function (brick) {
   return !brick.wall && brick.hp > 0;
 });
@@ -461,6 +676,7 @@ finishCompletionSlowMo(runtime);
 assert(runtime.state === 'victory', 'Final-brick slow motion from ball collision reaches victory settlement');
 
 runtime.handleUiAction('restart');
+advanceToLevel(runtime, 10);
 finalBreakables = runtime.bricks.filter(function (brick) {
   return !brick.wall && brick.hp > 0;
 });
@@ -496,6 +712,77 @@ runtime.saveCustomLevel();
 assert(runtime.customDesign && runtime.customDesign.cells, 'Editor saves custom level data');
 runtime.playCustomLevel();
 assert(runtime.state === 'playing' && runtime.bricks.length > 0, 'Saved custom level can be played');
+runtime.handleUiAction('title');
+runtime.handleUiAction('editDefault');
+assert(runtime.state === 'editor' && runtime.editorMode === 'default' && runtime.editorDefaultLevel === 1, 'Default level editor opens level one in the shared editor');
+var storedDefaultConfig = null;
+originalWx = global.wx;
+global.wx = {
+  setStorageSync: function (key, value) {
+    if (key === 'brick_breaker_exported_default_level_v1') {
+      storedDefaultConfig = value;
+    }
+  }
+};
+runtime.handleUiAction('exportDefault');
+assert(storedDefaultConfig && storedDefaultConfig.level === 1 && storedDefaultConfig.snippet.indexOf('id: 1') !== -1 && storedDefaultConfig.snippet.indexOf("rows: [") !== -1 && storedDefaultConfig.snippet.indexOf('#########################') !== -1, 'Default editor can export the edited level as a readable config snippet for src/default-levels.js without clipboard permissions');
+if (originalWx === undefined) {
+  delete global.wx;
+} else {
+  global.wx = originalWx;
+}
+var beforeDefaultBreakables = runtime.editorGrid.reduce(function (sum, row) {
+  return sum + row.filter(function (cell) {
+    return cell && cell !== 'wall';
+  }).length;
+}, 0);
+var editableCell = null;
+var editorMetrics = runtime.getBoardMetrics();
+var editorBoardTop = editorMetrics.playTop + editorMetrics.brickHeight;
+runtime.editorGrid.some(function (row, rowIndex) {
+  return row.some(function (cell, colIndex) {
+    if (cell === 'green') {
+      editableCell = { row: rowIndex, col: colIndex };
+      return true;
+    }
+    return false;
+  });
+});
+assert(!!editableCell, 'Default level editor exposes ordinary bricks for manual editing');
+runtime.editorTool = 'erase';
+runtime.handleEditorPoint(runtime.worldToScreen(
+  editorMetrics.boardLeft + editorMetrics.brickWidth * (editableCell.col + 0.5),
+  editorBoardTop - editorMetrics.brickHeight * (editableCell.row + 0.5)
+));
+var afterManualBreakables = runtime.editorGrid.reduce(function (sum, row) {
+  return sum + row.filter(function (cell) {
+    return cell && cell !== 'wall';
+  }).length;
+}, 0);
+assert(afterManualBreakables === beforeDefaultBreakables - 1, 'Default editor supports manual removal of ordinary bricks under user control');
+runtime.handleUiAction('saveLevel');
+assert(runtime.defaultDesigns['1'] && runtime.defaultDesigns['1'].cells, 'Default editor saves optimized level one');
+runtime.handleUiAction('clearLevel');
+assert(runtime.editorMode === 'default' && runtime.editorDefaultLevel === 2, 'Default editor can switch to level two from the bottom controls');
+runtime.handleUiAction('saveLevel');
+assert(runtime.defaultDesigns['2'] && runtime.defaultDesigns['2'].cells, 'Default editor saves optimized level two');
+runtime.handleUiAction('clearLevel');
+assert(runtime.editorMode === 'default' && runtime.editorDefaultLevel === 3, 'Default editor can switch to level three from the bottom controls');
+assert(runtime.getUnreachableBreakableCells(runtime.editorGrid).length === 0, 'Default editor shows the repaired third-level fish layout without dead green regions');
+runtime.handleUiAction('saveLevel');
+assert(runtime.defaultDesigns['3'] && runtime.defaultDesigns['3'].cells, 'Default editor saves optimized level three');
+assert(runtime.getUnreachableBreakableCells(runtime.defaultDesigns['3'].cells).length === 0, 'Saved default third level keeps every breakable brick reachable');
+while (runtime.editorDefaultLevel < 10) {
+  runtime.handleUiAction('clearLevel');
+}
+assert(runtime.editorMode === 'default' && runtime.editorDefaultLevel === 10, 'Default editor can cycle forward to the tenth default level');
+assert(runtime.getUnreachableBreakableCells(runtime.editorGrid).length === 0, 'Default editor shows the repaired tenth-level layout without dead green regions');
+runtime.handleUiAction('saveLevel');
+assert(runtime.defaultDesigns['10'] && runtime.defaultDesigns['10'].cells, 'Default editor saves optimized level ten');
+runtime.generateLevel(1, false);
+assert(runtime.getBreakableCount() === afterManualBreakables, 'Saved default level one is used by the normal default campaign generator');
+runtime.handleUiAction('playCustom');
+assert(runtime.state === 'playing' && runtime.currentRunCustom === false && runtime.level === 10, 'Default editor can directly test the currently edited default level');
 
 runtime.ballGroup = fakeGroup(2);
 runtime.powerGroup = fakeGroup(3);

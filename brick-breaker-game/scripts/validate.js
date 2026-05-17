@@ -11,6 +11,7 @@ var jsFiles = [
   'scripts/smoke.js',
   'scripts/validate.js',
   'src/audio.js',
+  'src/default-levels.js',
   'src/game-meta.js',
   'src/minigame-app.js',
   'src/minigame-runtime.js',

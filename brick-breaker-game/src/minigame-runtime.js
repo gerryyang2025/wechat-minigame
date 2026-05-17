@@ -2,10 +2,14 @@
 
 var utils = require('./utils');
 var AudioManager = require('./audio');
+var defaultLevelConfig = require('./default-levels');
 
 var STORAGE_SAVE = 'brick_breaker_save_v1';
 var STORAGE_CUSTOM = 'brick_breaker_custom_level_v1';
+var STORAGE_DEFAULT_LEVELS = 'brick_breaker_default_levels_v1';
+var STORAGE_EXPORTED_DEFAULT_LEVEL = 'brick_breaker_exported_default_level_v1';
 var SAVE_VERSION = 2;
+var DEFAULT_LEVEL_TEMPLATE_VERSION = 6;
 
 var WORLD_HEIGHT = 11.4;
 var BOARD_WIDTH = 4.86;
@@ -20,11 +24,16 @@ var BRICK_GAP = 0.018;
 var BRICK_OUTLINE_INSET = 0.002;
 var BRICK_W = BOARD_WIDTH / COLS;
 var BRICK_H = BRICK_W;
+var BOMB_GRID_RANGE = 1;
+var BOMB_EFFECT_LIFE = 0.34;
+var BOMB_EFFECT_SCALE = 0.58;
+var EFFECT_RING_BASE_SCALE = 0.62;
+var EFFECT_RING_GROWTH_SCALE = 1.18;
 var PLAY_TOP = BOARD_TOP - BRICK_H;
 var PADDLE_Y = -4.22;
 var PADDLE_BASE_WIDTH = 1.45;
 var BALL_RADIUS = 0.072;
-var BALL_SPEED = 5.45;
+var BALL_SPEED = 4.72;
 var BALL_COLLISION_STEP = 0.08;
 var BALL_STUCK_TIME = 3.2;
 var BALL_STUCK_DISTANCE = 0.48;
@@ -33,7 +42,7 @@ var POWER_SPEED = 1.65;
 var POWER_CATCH_PADDING_X = 0.26;
 var POWER_CATCH_TOP = 0.34;
 var POWER_CATCH_BOTTOM = 0.18;
-var MAX_BALLS = 32;
+var MAX_BALLS = 48;
 var MAX_ACTIVE_POWERUPS = 5;
 var MAX_ACTIVE_EFFECTS = 28;
 var MAX_RENDER_PIXEL_RATIO = 1.5;
@@ -45,6 +54,12 @@ var BALL_OUTLINE_RATIO = 1.15;
 var BALL_OUTLINE_Z = 0;
 var BALL_BODY_Z = 0.018;
 var BALL_RENDER_Z = 0.34;
+var PADDLE_DRAG_BASE_GAIN = 1.32;
+var PADDLE_DRAG_FAST_GAIN = 1.62;
+var PADDLE_DRAG_SPEED_MIN = 0.28;
+var PADDLE_DRAG_SPEED_MAX = 1.45;
+var PADDLE_DRAG_MIN_DT_MS = 8;
+var PADDLE_DRAG_FALLBACK_DT_MS = 16.7;
 var UI_BUTTON_WIDTH = 188;
 var UI_BUTTON_HEIGHT = 42;
 var UI_BUTTON_RADIUS = 12;
@@ -53,9 +68,13 @@ var UI_BUTTON_SHADOW_Y = 5;
 var UI_BUTTON_STROKE = 2.4;
 var UI_SMALL_BUTTON_WIDTH = 118;
 var STARTING_LIVES = 3;
+var DEFAULT_LEVELS = defaultLevelConfig.defaultLevels || [];
+var DEFAULT_LEVEL_COUNT = DEFAULT_LEVELS.length || 10;
 var COMPLETE_SLOWMO_DURATION = 1.05;
 var COMPLETE_SLOWMO_SCALE = 0.22;
 var COMPLETE_SCORE_BONUS = 200;
+var OPENING_GUIDE_DASHES = 18;
+var OPENING_GUIDE_SPEED = 0.22;
 
 var BRICK_COLORS = {
   green: 0x4fbd73,
@@ -93,11 +112,11 @@ var POWER_SHORT_LABELS = {
 };
 
 var POWER_CSS_COLORS = {
-  split: '#47f281',
+  split: '#1479ff',
   heavy: '#ffb13d',
   shotgun: '#75a3ff',
   bomb: '#ff4f40',
-  laser: '#6ff6ff'
+  laser: '#ff4fd8'
 };
 
 var BRICK_POWER_BY_COLOR = {
@@ -109,6 +128,25 @@ var BRICK_POWER_BY_COLOR = {
 };
 
 var SKILL_BRICK_ORDER = ['blue', 'gold', 'violet', 'crimson', 'pink'];
+var DEFAULT_LEVEL_SYMBOLS = {
+  '#': 'wall',
+  G: 'green',
+  B: 'blue',
+  Y: 'gold',
+  V: 'violet',
+  R: 'crimson',
+  P: 'pink',
+  '.': ''
+};
+var DEFAULT_LEVEL_TYPE_SYMBOLS = {
+  wall: '#',
+  green: 'G',
+  blue: 'B',
+  gold: 'Y',
+  violet: 'V',
+  crimson: 'R',
+  pink: 'P'
+};
 
 function noop() {}
 
@@ -123,6 +161,10 @@ function clearGroup(group) {
 
 function isPowerOfTwo(value) {
   return value > 0 && (value & (value - 1)) === 0;
+}
+
+function cellInRect(col, row, left, top, right, bottom) {
+  return col >= left && col <= right && row >= top && row <= bottom;
 }
 
 function isFilteredThreeWarning(args) {
@@ -288,6 +330,10 @@ function BrickBreakerRuntime(options) {
   this.currentRunCustom = false;
   this.runStats = this.createRunStats();
   this.customDesign = null;
+  this.defaultDesigns = {};
+  this.editorMode = 'custom';
+  this.editorDefaultLevel = 1;
+  this.editorDirty = false;
   this.editorTool = 'green';
   this.editorGrid = [];
 
@@ -300,6 +346,7 @@ function BrickBreakerRuntime(options) {
   this.effects = [];
   this.nextId = 1;
   this.readyToShoot = true;
+  this.openingGuideVisible = true;
   this.heavyTimer = 0;
   this.ballArmy = 1;
   this.ballDamage = 1;
@@ -331,6 +378,7 @@ function BrickBreakerRuntime(options) {
   this.uiScene = null;
   this.uiCamera = null;
   this.uiSprite = null;
+  this.openingGuideHandImage = null;
   this.materials = {};
   this.geometries = {};
   this.brickMaterials = {};
@@ -354,9 +402,13 @@ BrickBreakerRuntime.prototype.init = function () {
 
 BrickBreakerRuntime.prototype.loadSave = function () {
   var custom = utils.safeGetStorage(STORAGE_CUSTOM, null);
+  var defaults = utils.safeGetStorage(STORAGE_DEFAULT_LEVELS, null);
   this.resetGameProgress();
   if (custom && typeof custom === 'object' && custom.cells) {
     this.customDesign = custom;
+  }
+  if (defaults && typeof defaults === 'object') {
+    this.defaultDesigns = defaults;
   }
 };
 
@@ -683,6 +735,7 @@ BrickBreakerRuntime.prototype.startRun = function (useCustom) {
   this.currentRunCustom = !!useCustom;
   this.clearActiveEntities(true);
   this.readyToShoot = true;
+  this.openingGuideVisible = true;
   this.paddle.x = 0;
   this.resetRunStats(!!useCustom);
   this.generateLevel(1, !!useCustom);
@@ -692,44 +745,586 @@ BrickBreakerRuntime.prototype.startRun = function (useCustom) {
   this.syncScene();
 };
 
+BrickBreakerRuntime.prototype.startNextLevel = function () {
+  if (this.currentRunCustom || this.level >= DEFAULT_LEVEL_COUNT) {
+    this.startRun(this.currentRunCustom);
+    return;
+  }
+  this.state = 'playing';
+  this.completionDelay = 0;
+  this.completionBrick = null;
+  this.level += 1;
+  this.clearActiveEntities(true);
+  this.readyToShoot = true;
+  this.aimActive = false;
+  this.touchMode = 'idle';
+  this.openingGuideVisible = true;
+  this.paddle.x = 0;
+  this.generateLevel(this.level, false);
+  this.setMessage('第 ' + this.level + '/' + DEFAULT_LEVEL_COUNT + ' 关', 1.5);
+  this.audio.playClick();
+  this.audio.playBgm();
+  this.syncScene();
+};
+
 BrickBreakerRuntime.prototype.generateLevel = function (level, useCustom) {
+  var cells;
+  if (useCustom && this.customDesign && this.customDesign.cells) {
+    this.addCellsToBricks(this.customDesign.cells, level);
+    return;
+  }
+  cells = this.cloneCells(this.getSavedDefaultCells(level) || this.buildGeneratedLevelCells(level));
+  this.ensureDefaultOpenRoutes(level, cells);
+  this.addCellsToBricks(cells, level);
+};
+
+BrickBreakerRuntime.prototype.createEmptyCells = function () {
+  var cells = [];
+  var r;
+  var c;
+  for (r = 0; r < ROWS; r += 1) {
+    cells[r] = [];
+    for (c = 0; c < COLS; c += 1) {
+      cells[r][c] = '';
+    }
+  }
+  return cells;
+};
+
+BrickBreakerRuntime.prototype.getDefaultLevelConfig = function (level) {
+  var index = Math.max(0, Math.min(DEFAULT_LEVELS.length - 1, Math.round(level || 1) - 1));
+  return DEFAULT_LEVELS[index] || null;
+};
+
+BrickBreakerRuntime.prototype.buildConfiguredLevelCells = function (level) {
+  var config = this.getDefaultLevelConfig(level);
+  var cells;
+  var rowText;
+  var symbol;
+  var type;
+  var r;
+  var c;
+  if (!config || !config.rows) {
+    return null;
+  }
+  cells = this.createEmptyCells();
+  for (r = 0; r < INITIAL_ROWS; r += 1) {
+    rowText = config.rows[r] || '';
+    for (c = 0; c < COLS; c += 1) {
+      symbol = rowText.charAt(c) || '.';
+      type = DEFAULT_LEVEL_SYMBOLS[symbol];
+      cells[r][c] = type === undefined ? '' : type;
+    }
+  }
+  return cells;
+};
+
+BrickBreakerRuntime.prototype.buildGeneratedLevelCells = function (level) {
+  var configuredCells = this.buildConfiguredLevelCells(level);
+  var cells = this.createEmptyCells();
+  var skillPlan = this.planInitialSkillBricks(level);
+  var r;
+  var c;
+  var type;
+  if (configuredCells) {
+    return configuredCells;
+  }
+  for (r = 0; r < INITIAL_ROWS; r += 1) {
+    for (c = 0; c < COLS; c += 1) {
+      type = skillPlan[r + ':' + c] || '';
+      if (this.shouldPlaceWallBrick(c, r, level)) {
+        cells[r][c] = 'wall';
+      } else if (type) {
+        cells[r][c] = type;
+      } else if (this.shouldLeaveStarterGap(c, r, level)) {
+        continue;
+      } else if (this.shouldLeavePracticeGap(c, r, level)) {
+        continue;
+      } else {
+        cells[r][c] = 'green';
+      }
+    }
+  }
+  return cells;
+};
+
+BrickBreakerRuntime.prototype.addCellsToBricks = function (cells, level) {
   var r;
   var c;
   var type;
   var hp;
-  var cells;
-  var skillPlan;
   this.clearBrickMeshes();
   this.bricks = [];
   this.resetBrickGrid();
-  if (useCustom && this.customDesign && this.customDesign.cells) {
-    cells = this.customDesign.cells;
-    for (r = 0; r < ROWS; r += 1) {
-      for (c = 0; c < COLS; c += 1) {
-        type = cells[r] && cells[r][c] ? cells[r][c] : '';
-        if (type) {
-          hp = type === 'wall' ? 999 : Math.max(1, Math.ceil(level / 2));
-          this.addBrick(c, r, type, hp, type === 'wall');
-        }
-      }
-    }
-    return;
-  }
-
-  skillPlan = this.planInitialSkillBricks(level);
-  for (r = 0; r < INITIAL_ROWS; r += 1) {
+  for (r = 0; r < ROWS; r += 1) {
     for (c = 0; c < COLS; c += 1) {
-      if (this.shouldPlaceWallBrick(c, r)) {
-        this.addBrick(c, r, 'wall', 999, true);
-      } else if (this.shouldLeaveStarterGap(c, r, level)) {
-        continue;
-      } else {
-        type = skillPlan[r + ':' + c] || 'green';
-        hp = 1;
-        this.addBrick(c, r, type, hp, false);
+      type = cells[r] && cells[r][c] ? cells[r][c] : '';
+      if (type) {
+        hp = type === 'wall' ? 999 : this.getBrickHpForLevel(level);
+        this.addBrick(c, r, type, hp, type === 'wall');
       }
     }
   }
+};
+
+BrickBreakerRuntime.prototype.getBrickHpForLevel = function (level) {
+  return Math.max(1, Math.ceil(level / 2) + (level >= DEFAULT_LEVEL_COUNT ? 1 : 0));
+};
+
+BrickBreakerRuntime.prototype.getSavedDefaultCells = function (level) {
+  var key = String(level);
+  var design = this.defaultDesigns && this.defaultDesigns[key];
+  return design && design.cells && design.version === DEFAULT_LEVEL_TEMPLATE_VERSION ? design.cells : null;
+};
+
+BrickBreakerRuntime.prototype.ensureDefaultOpenRoutes = function (level, cells) {
+  if (level === 3 && !this.hasLevelTwoOpenRoute(cells)) {
+    this.carveLevelTwoFallbackRoute(cells);
+  }
+  this.repairUnreachableBreakables(cells);
+};
+
+BrickBreakerRuntime.prototype.hasLevelTwoOpenRoute = function (cells) {
+  return this.hasOpenCellPath(cells, [
+    { row: 5, col: 11 },
+    { row: 5, col: 12 },
+    { row: 5, col: 13 },
+    { row: 5, col: 14 }
+  ], [
+    { row: INITIAL_ROWS - 1, col: 11 },
+    { row: INITIAL_ROWS - 1, col: 12 },
+    { row: INITIAL_ROWS - 1, col: 13 },
+    { row: INITIAL_ROWS - 1, col: 14 }
+  ]);
+};
+
+BrickBreakerRuntime.prototype.hasOpenCellPath = function (cells, starts, goals) {
+  var queue = [];
+  var visited = {};
+  var goalSet = {};
+  var i;
+  var current;
+  var next;
+  var dirs = [
+    { dr: 1, dc: 0 },
+    { dr: -1, dc: 0 },
+    { dr: 0, dc: 1 },
+    { dr: 0, dc: -1 }
+  ];
+  for (i = 0; i < goals.length; i += 1) {
+    goalSet[goals[i].row + ':' + goals[i].col] = true;
+  }
+  for (i = 0; i < starts.length; i += 1) {
+    if (this.isOpenRouteCell(cells, starts[i].col, starts[i].row)) {
+      queue.push(starts[i]);
+      visited[starts[i].row + ':' + starts[i].col] = true;
+    }
+  }
+  while (queue.length) {
+    current = queue.shift();
+    if (goalSet[current.row + ':' + current.col]) {
+      return true;
+    }
+    for (i = 0; i < dirs.length; i += 1) {
+      next = {
+        row: current.row + dirs[i].dr,
+        col: current.col + dirs[i].dc
+      };
+      if (!visited[next.row + ':' + next.col] && this.isOpenRouteCell(cells, next.col, next.row)) {
+        visited[next.row + ':' + next.col] = true;
+        queue.push(next);
+      }
+    }
+  }
+  return false;
+};
+
+BrickBreakerRuntime.prototype.isOpenRouteCell = function (cells, col, row) {
+  return row >= 0 && row < ROWS && col >= 0 && col < COLS && !(cells[row] && cells[row][col]);
+};
+
+BrickBreakerRuntime.prototype.carveLevelTwoFallbackRoute = function (cells) {
+  var route = [
+    { row: 5, col: 11 },
+    { row: 6, col: 10 },
+    { row: 7, col: 9 },
+    { row: 8, col: 8 },
+    { row: 9, col: 8 },
+    { row: 10, col: 8 },
+    { row: 11, col: 8 },
+    { row: 12, col: 8 },
+    { row: 13, col: 9 },
+    { row: 14, col: 10 },
+    { row: 15, col: 11 },
+    { row: 16, col: 12 },
+    { row: 17, col: 12 },
+    { row: 18, col: 12 },
+    { row: 19, col: 12 },
+    { row: 20, col: 12 },
+    { row: INITIAL_ROWS - 1, col: 12 }
+  ];
+  var i;
+  for (i = 0; i < route.length; i += 1) {
+    this.clearRouteCell(cells, route[i].col, route[i].row);
+    this.clearRouteCell(cells, route[i].col + 1, route[i].row);
+  }
+};
+
+BrickBreakerRuntime.prototype.clearRouteCell = function (cells, col, row) {
+  if (row >= 0 && row < ROWS && col >= 0 && col < COLS && cells[row]) {
+    cells[row][col] = '';
+  }
+};
+
+BrickBreakerRuntime.prototype.clearUnreachableBreakables = function (cells) {
+  var unreachable = this.getUnreachableBreakableCells(cells);
+  var i;
+  for (i = 0; i < unreachable.length; i += 1) {
+    cells[unreachable[i].row][unreachable[i].col] = '';
+  }
+};
+
+BrickBreakerRuntime.prototype.repairUnreachableBreakables = function (cells) {
+  var guard;
+  var unreachable;
+  var reachable;
+  for (guard = 0; guard < 24; guard += 1) {
+    unreachable = this.getUnreachableBreakableCells(cells);
+    if (!unreachable.length) {
+      return;
+    }
+    reachable = this.getReachableCellsFromLaunch(cells);
+    if (!this.carveRouteToReachableCell(cells, unreachable[0], reachable)) {
+      break;
+    }
+  }
+  this.clearUnreachableBreakables(cells);
+};
+
+BrickBreakerRuntime.prototype.getUnreachableBreakableCells = function (cells) {
+  var reachable = this.getReachableCellsFromLaunch(cells);
+  var result = [];
+  var r;
+  var c;
+  var type;
+  for (r = 0; r < ROWS; r += 1) {
+    for (c = 0; c < COLS; c += 1) {
+      type = cells[r] && cells[r][c] ? cells[r][c] : '';
+      if (type && type !== 'wall' && !reachable[r + ':' + c]) {
+        result.push({ row: r, col: c, type: type });
+      }
+    }
+  }
+  return result;
+};
+
+BrickBreakerRuntime.prototype.getReachableCellsFromLaunch = function (cells) {
+  var queue = [];
+  var visited = {};
+  var dirs = [
+    { dr: 1, dc: 0 },
+    { dr: -1, dc: 0 },
+    { dr: 0, dc: 1 },
+    { dr: 0, dc: -1 }
+  ];
+  var c;
+  var i;
+  var current;
+  var next;
+  for (c = 0; c < COLS; c += 1) {
+    if (this.isLaunchReachableCell(cells, c, ROWS - 1)) {
+      queue.push({ row: ROWS - 1, col: c });
+      visited[(ROWS - 1) + ':' + c] = true;
+    }
+  }
+  while (queue.length) {
+    current = queue.shift();
+    for (i = 0; i < dirs.length; i += 1) {
+      next = {
+        row: current.row + dirs[i].dr,
+        col: current.col + dirs[i].dc
+      };
+      if (!visited[next.row + ':' + next.col] && this.isLaunchReachableCell(cells, next.col, next.row)) {
+        visited[next.row + ':' + next.col] = true;
+        queue.push(next);
+      }
+    }
+  }
+  return visited;
+};
+
+BrickBreakerRuntime.prototype.isLaunchReachableCell = function (cells, col, row) {
+  return row >= 0 && row < ROWS && col >= 0 && col < COLS && (!cells[row] || cells[row][col] !== 'wall');
+};
+
+BrickBreakerRuntime.prototype.carveRouteToReachableCell = function (cells, target, reachable) {
+  var nearest = this.findNearestReachableCell(target, reachable);
+  var row;
+  var col;
+  var step;
+  if (!nearest) {
+    return false;
+  }
+  row = target.row;
+  col = target.col;
+  step = nearest.col > col ? 1 : -1;
+  while (col !== nearest.col) {
+    this.clearWallRouteCell(cells, col, row);
+    col += step;
+  }
+  step = nearest.row > row ? 1 : -1;
+  while (row !== nearest.row) {
+    this.clearWallRouteCell(cells, col, row);
+    row += step;
+  }
+  this.clearWallRouteCell(cells, col, row);
+  return true;
+};
+
+BrickBreakerRuntime.prototype.findNearestReachableCell = function (target, reachable) {
+  var best = null;
+  var bestDistance = 99999;
+  var key;
+  var parts;
+  var row;
+  var col;
+  var distance;
+  for (key in reachable) {
+    if (Object.prototype.hasOwnProperty.call(reachable, key)) {
+      parts = key.split(':');
+      row = parseInt(parts[0], 10);
+      col = parseInt(parts[1], 10);
+      distance = Math.abs(target.row - row) + Math.abs(target.col - col);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        best = { row: row, col: col };
+      }
+    }
+  }
+  return best;
+};
+
+BrickBreakerRuntime.prototype.clearWallRouteCell = function (cells, col, row) {
+  if (row >= 0 && row < ROWS && col >= 0 && col < COLS && cells[row] && cells[row][col] === 'wall') {
+    cells[row][col] = '';
+  }
+};
+
+BrickBreakerRuntime.prototype.isIntroCorridorCell = function (col, row) {
+  return row >= 15 ||
+    cellInRect(col, row, 11, 2, 13, 14) ||
+    cellInRect(col, row, 2, 5, 22, 5) ||
+    cellInRect(col, row, 3, 11, 21, 11);
+};
+
+BrickBreakerRuntime.prototype.isIntroWallCell = function (col, row) {
+  if (row === 0 || col === 0 || col === COLS - 1) {
+    return true;
+  }
+  return cellInRect(col, row, 5, 6, 10, 6) ||
+    cellInRect(col, row, 14, 9, 20, 9) ||
+    cellInRect(col, row, 3, 13, 8, 13) ||
+    cellInRect(col, row, 16, 14, 21, 14);
+};
+
+BrickBreakerRuntime.prototype.isReferenceCorridorCell = function (col, row) {
+  return cellInRect(col, row, 4, 3, 20, 4) ||
+    cellInRect(col, row, 20, 1, 21, 5) ||
+    cellInRect(col, row, 4, 5, 5, 17) ||
+    cellInRect(col, row, 4, 17, 20, 18) ||
+    cellInRect(col, row, 20, 17, 21, INITIAL_ROWS - 1);
+};
+
+BrickBreakerRuntime.prototype.isReferenceWallCell = function (col, row) {
+  if (row === 0 || col === 0 || col === COLS - 1) {
+    return true;
+  }
+  return cellInRect(col, row, 5, 5, 19, 5) ||
+    cellInRect(col, row, 22, 1, 22, 6) ||
+    cellInRect(col, row, 6, 6, 6, 16) ||
+    cellInRect(col, row, 6, 16, 20, 16) ||
+    cellInRect(col, row, 1, 19, 19, 19) ||
+    cellInRect(col, row, 22, 18, 22, INITIAL_ROWS - 1);
+};
+
+BrickBreakerRuntime.prototype.isLevelTwoCorridorCell = function (col, row) {
+  var left = -1;
+  var right = -1;
+  if (cellInRect(col, row, 1, 1, 2, INITIAL_ROWS - 2) || cellInRect(col, row, 4, 2, 4, 7) || cellInRect(col, row, 11, INITIAL_ROWS - 1, 14, INITIAL_ROWS - 1)) {
+    return true;
+  }
+  if (row === 4) {
+    left = 12;
+    right = 14;
+  } else if (row === 5) {
+    left = 10;
+    right = 16;
+  } else if (row === 6) {
+    left = 9;
+    right = 17;
+  } else if (row === 7) {
+    left = 8;
+    right = 18;
+  } else if (row === 8) {
+    left = 6;
+    right = 20;
+  } else if (row === 9) {
+    left = 4;
+    right = 21;
+  } else if (row === 10) {
+    left = 3;
+    right = 22;
+  } else if (row === 11) {
+    left = 4;
+    right = 21;
+  } else if (row === 12) {
+    left = 6;
+    right = 20;
+  } else if (row === 13) {
+    left = 8;
+    right = 18;
+  } else if (row === 14) {
+    left = 9;
+    right = 17;
+  } else if (row === 15) {
+    left = 10;
+    right = 15;
+  } else if (row === 16) {
+    left = 11;
+    right = 14;
+  } else if (row === 17) {
+    left = 10;
+    right = 14;
+  } else if (row === 18) {
+    left = 9;
+    right = 15;
+  } else if (row === 19) {
+    left = 8;
+    right = 16;
+  } else if (row === 20) {
+    left = 10;
+    right = 14;
+  }
+  return left >= 0 && col >= left && col <= right;
+};
+
+BrickBreakerRuntime.prototype.isLevelTwoWallCell = function (col, row) {
+  var dr;
+  var dc;
+  if (row === 0 || col === 0 || col === COLS - 1) {
+    return true;
+  }
+  if (this.isLevelTwoCorridorCell(col, row)) {
+    return false;
+  }
+  if (cellInRect(col, row, 3, 1, 3, 7) || cellInRect(col, row, 5, 2, 5, 6) || cellInRect(col, row, 1, INITIAL_ROWS - 1, 10, INITIAL_ROWS - 1) || cellInRect(col, row, 15, INITIAL_ROWS - 1, 23, INITIAL_ROWS - 1)) {
+    return true;
+  }
+  if (row === INITIAL_ROWS - 1 && col >= 11 && col <= 14) {
+    return false;
+  }
+  for (dr = -1; dr <= 1; dr += 1) {
+    for (dc = -1; dc <= 1; dc += 1) {
+      if (Math.abs(dr) + Math.abs(dc) === 1 && this.isLevelTwoCorridorCell(col + dc, row + dr)) {
+        return true;
+      }
+    }
+  }
+  return false;
+};
+
+BrickBreakerRuntime.prototype.isAdvancedCorridorCell = function (col, row, level) {
+  var pattern = (level - 4) % 4;
+  if (row >= Math.max(15, 20 - Math.floor(level / 2))) {
+    return true;
+  }
+  if (pattern === 0) {
+    return cellInRect(col, row, 3, 4, 21, 5) ||
+      cellInRect(col, row, 11, 2, 13, 16) ||
+      cellInRect(col, row, 4, 11, 20, 12);
+  }
+  if (pattern === 1) {
+    return cellInRect(col, row, 3, 3, 5, 17) ||
+      cellInRect(col, row, 19, 3, 21, 17) ||
+      cellInRect(col, row, 5, 9, 19, 10) ||
+      (row >= 5 && row <= 16 && col >= 6 && col <= 18 && Math.abs((col - 12) - Math.floor((row - 5) / 2)) <= 1);
+  }
+  if (pattern === 2) {
+    return cellInRect(col, row, 2, 4, 22, 5) ||
+      cellInRect(col, row, 2, 13, 22, 14) ||
+      cellInRect(col, row, 6, 5, 7, 13) ||
+      cellInRect(col, row, 17, 5, 18, 13) ||
+      cellInRect(col, row, 10, 9, 14, 10);
+  }
+  return cellInRect(col, row, 2, 3, 22, 4) ||
+    cellInRect(col, row, 2, 16, 22, 17) ||
+    cellInRect(col, row, 2, 4, 3, 16) ||
+    cellInRect(col, row, 21, 4, 22, 16) ||
+    cellInRect(col, row, 8, 8, 16, 12);
+};
+
+BrickBreakerRuntime.prototype.isAdvancedWallCell = function (col, row, level) {
+  var pattern = (level - 4) % 4;
+  if (row === 0 || col === 0 || col === COLS - 1) {
+    return true;
+  }
+  if (this.isAdvancedCorridorCell(col, row, level)) {
+    return false;
+  }
+  if (pattern === 0 && (cellInRect(col, row, 2, 7, 10, 7) || cellInRect(col, row, 14, 8, 22, 8) || cellInRect(col, row, 5, 14, 19, 14))) {
+    return true;
+  }
+  if (pattern === 1 && (cellInRect(col, row, 7, 4, 17, 4) || cellInRect(col, row, 7, 14, 17, 14) || cellInRect(col, row, 11, 6, 13, 13))) {
+    return true;
+  }
+  if (pattern === 2 && (cellInRect(col, row, 3, 8, 12, 8) || cellInRect(col, row, 12, 11, 21, 11) || cellInRect(col, row, 11, 5, 13, 13))) {
+    return true;
+  }
+  if (pattern === 3 && (cellInRect(col, row, 5, 6, 19, 6) || cellInRect(col, row, 5, 14, 19, 14) || cellInRect(col, row, 5, 6, 5, 14) || cellInRect(col, row, 19, 6, 19, 14))) {
+    return true;
+  }
+  if (level >= 7 && row >= 4 && row <= 16 && (col + row + level) % 9 === 0 && col > 2 && col < COLS - 3) {
+    return true;
+  }
+  if (level >= 9 && row >= 3 && row <= 17 && (col * 3 + row * 5 + level) % 17 === 0 && col > 2 && col < COLS - 3) {
+    return true;
+  }
+  return false;
+};
+
+BrickBreakerRuntime.prototype.isReferencePracticeGap = function (col, row) {
+  return cellInRect(col, row, 8, 7, 12, 9) ||
+    cellInRect(col, row, 13, 11, 18, 13) ||
+    cellInRect(col, row, 8, 15, 11, 17) ||
+    cellInRect(col, row, 14, 20, 18, INITIAL_ROWS - 1) ||
+    (row >= 8 && row <= 17 && col >= 8 && col <= 18 && (col * 3 + row * 5) % 17 < 2);
+};
+
+BrickBreakerRuntime.prototype.isLevelTwoPracticeGap = function (col, row) {
+  return cellInRect(col, row, 7, 2, 10, 5) ||
+    cellInRect(col, row, 16, 2, 20, 5) ||
+    cellInRect(col, row, 3, 14, 6, 18) ||
+    cellInRect(col, row, 18, 16, 22, 19);
+};
+
+BrickBreakerRuntime.prototype.isIntroPracticeGap = function (col, row) {
+  return cellInRect(col, row, 2, 2, 5, 4) ||
+    cellInRect(col, row, 17, 2, 22, 4) ||
+    cellInRect(col, row, 3, 8, 8, 10) ||
+    cellInRect(col, row, 16, 11, 22, 13) ||
+    cellInRect(col, row, 2, 12, 5, 14) ||
+    (row >= 7 && row <= 14 && col >= 7 && col <= 17 && (col * 5 + row * 7) % 13 < 3);
+};
+
+BrickBreakerRuntime.prototype.isAdvancedPracticeGap = function (col, row, level) {
+  var chance = Math.max(2, 18 - (level - 4) * 2);
+  if (row < 2 || row > INITIAL_ROWS - 3 || this.shouldPlaceWallBrick(col, row, level) || this.shouldLeaveStarterGap(col, row, level)) {
+    return false;
+  }
+  if (level <= 5 && (cellInRect(col, row, 3, 2, 7, 3) || cellInRect(col, row, 17, 2, 21, 3))) {
+    return true;
+  }
+  return (col * 17 + row * 31 + level * 23) % 100 < chance;
 };
 
 BrickBreakerRuntime.prototype.getInitialSkillQuota = function (level) {
@@ -748,6 +1343,24 @@ BrickBreakerRuntime.prototype.planInitialSkillBricks = function (level) {
   var i;
   var key;
   var cell;
+  if (level === 1) {
+    return {
+      '3:5': 'blue',
+      '4:18': 'gold',
+      '8:9': 'violet',
+      '10:16': 'crimson',
+      '13:12': 'pink'
+    };
+  }
+  if (level === 3) {
+    return {
+      '3:6': 'blue',
+      '16:7': 'gold',
+      '4:18': 'violet',
+      '10:13': 'crimson',
+      '18:20': 'pink'
+    };
+  }
   for (i = 0; i < SKILL_BRICK_ORDER.length; i += 1) {
     key = SKILL_BRICK_ORDER[i];
     while (quota[key] > 0) {
@@ -789,7 +1402,7 @@ BrickBreakerRuntime.prototype.canUseSkillCell = function (col, row, level, plan,
   var parts;
   var otherRow;
   var otherCol;
-  if (plan[id] || this.shouldPlaceWallBrick(col, row) || this.shouldLeaveStarterGap(col, row, level)) {
+  if (plan[id] || this.shouldPlaceWallBrick(col, row, level) || this.shouldLeaveStarterGap(col, row, level)) {
     return false;
   }
   if (!requireSpacing) {
@@ -808,28 +1421,49 @@ BrickBreakerRuntime.prototype.canUseSkillCell = function (col, row, level, plan,
   return true;
 };
 
-BrickBreakerRuntime.prototype.shouldPlaceWallBrick = function (col, row) {
-  if (row === 0 || col === 0 || col === COLS - 1) {
-    return true;
+BrickBreakerRuntime.prototype.shouldPlaceWallBrick = function (col, row, level) {
+  if (row < 0 || row >= INITIAL_ROWS || col < 0 || col >= COLS) {
+    return false;
   }
-  if ((row === 10 && col >= 7 && col <= 15) || (row === 11 && col === 7) || (row === 12 && col >= 4 && col <= 7)) {
-    return true;
+  if (level === 1) {
+    return this.isIntroWallCell(col, row);
   }
-  if (row === INITIAL_ROWS - 1 && ((col >= 2 && col <= 7) || (col >= 14 && col <= 22))) {
-    return true;
+  if (level === 2) {
+    return this.isReferenceWallCell(col, row);
   }
-  return false;
+  return level === 3 ? this.isLevelTwoWallCell(col, row) : this.isAdvancedWallCell(col, row, level);
 };
 
 BrickBreakerRuntime.prototype.shouldLeaveStarterGap = function (col, row, level) {
-  var value = (col * 37 + row * 23 + level * 11) % 100;
-  if (row > 14 && row < INITIAL_ROWS - 1 && value < 12) {
-    return true;
+  if (row < 0 || row >= INITIAL_ROWS || col < 0 || col >= COLS) {
+    return false;
   }
-  if (row > 6 && row < 14 && col > 9 && col < 14 && value < 48) {
-    return true;
+  if (level === 1) {
+    return this.isIntroCorridorCell(col, row) && !this.shouldPlaceWallBrick(col, row, level);
   }
-  return false;
+  if (level === 3) {
+    return this.isLevelTwoCorridorCell(col, row) && !this.shouldPlaceWallBrick(col, row, level);
+  }
+  if (level === 2) {
+    return this.isReferenceCorridorCell(col, row) && !this.shouldPlaceWallBrick(col, row, level);
+  }
+  return this.isAdvancedCorridorCell(col, row, level) && !this.shouldPlaceWallBrick(col, row, level);
+};
+
+BrickBreakerRuntime.prototype.shouldLeavePracticeGap = function (col, row, level) {
+  if (row < 0 || row >= INITIAL_ROWS || col < 0 || col >= COLS) {
+    return false;
+  }
+  if (level === 1) {
+    return this.isIntroPracticeGap(col, row) && !this.shouldPlaceWallBrick(col, row, level);
+  }
+  if (level === 3) {
+    return this.isLevelTwoPracticeGap(col, row) && !this.shouldPlaceWallBrick(col, row, level);
+  }
+  if (level === 2) {
+    return this.isReferencePracticeGap(col, row) && !this.shouldPlaceWallBrick(col, row, level);
+  }
+  return this.isAdvancedPracticeGap(col, row, level);
 };
 
 BrickBreakerRuntime.prototype.addBrick = function (col, row, colorKey, hp, wall) {
@@ -996,10 +1630,31 @@ BrickBreakerRuntime.prototype.screenToWorld = function (x, y) {
   };
 };
 
+BrickBreakerRuntime.prototype.screenDeltaToWorld = function (dx) {
+  return dx / this.width * this.viewWidth;
+};
+
 BrickBreakerRuntime.prototype.worldToScreen = function (x, y) {
   return {
     x: (x / this.viewWidth + 0.5) * this.width,
     y: (0.5 - y / WORLD_HEIGHT) * this.height
+  };
+};
+
+BrickBreakerRuntime.prototype.getTouchTimeMs = function (event) {
+  if (event && typeof event.timeStamp === 'number' && event.timeStamp > 0) {
+    return event.timeStamp;
+  }
+  return Date.now ? Date.now() : Math.round(this.elapsed * 1000);
+};
+
+BrickBreakerRuntime.prototype.createPaddleDragState = function (point, event) {
+  return {
+    x: point.x,
+    y: point.y,
+    paddleX: this.paddle.x,
+    lastX: point.x,
+    lastTime: this.getTouchTimeMs(event)
   };
 };
 
@@ -1036,9 +1691,8 @@ BrickBreakerRuntime.prototype.handleTouchStart = function (event) {
   if (this.state !== 'playing') {
     return;
   }
-  this.touchStart = point;
+  this.touchStart = this.createPaddleDragState(point, event);
   this.touchMode = this.readyToShoot ? 'aim' : 'paddle';
-  this.updatePaddleFromScreen(point.x);
   this.updateAimFromPoint(point);
   if (this.touchMode === 'aim') {
     this.audio.playAimStart();
@@ -1054,7 +1708,7 @@ BrickBreakerRuntime.prototype.handleTouchMove = function (event) {
   if (this.state !== 'playing') {
     return;
   }
-  this.updatePaddleFromScreen(point.x);
+  this.updatePaddleFromDrag(point, event);
   if (this.touchMode === 'aim' && this.readyToShoot) {
     this.updateAimFromPoint(point);
   }
@@ -1091,6 +1745,8 @@ BrickBreakerRuntime.prototype.handleUiAction = function (key) {
     this.startRun(false);
   } else if (key === 'editor') {
     this.enterEditor();
+  } else if (key === 'editDefault') {
+    this.enterDefaultEditor(1);
   } else if (key === 'help') {
     this.helpReturnState = this.state === 'help' ? 'title' : this.state;
     this.state = 'help';
@@ -1100,16 +1756,35 @@ BrickBreakerRuntime.prototype.handleUiAction = function (key) {
     this.state = this.helpReturnState || 'title';
     this.audio.playClick();
   } else if (key === 'restart') {
-    this.startRun(this.currentRunCustom);
+    if (this.state === 'levelclear') {
+      this.startNextLevel();
+    } else {
+      this.startRun(this.currentRunCustom);
+    }
   } else if (key === 'title') {
     this.resetTitlePreview();
   } else if (key === 'saveLevel') {
-    this.saveCustomLevel();
+    if (this.editorMode === 'default') {
+      this.saveDefaultLevel();
+    } else {
+      this.saveCustomLevel();
+    }
   } else if (key === 'playCustom') {
-    this.playCustomLevel();
+    if (this.editorMode === 'default') {
+      this.playEditedDefaultLevel();
+    } else {
+      this.playCustomLevel();
+    }
+  } else if (key === 'exportDefault') {
+    this.exportDefaultLevelConfig();
   } else if (key === 'clearLevel') {
-    this.resetEditorGrid();
-    this.editorGridToBricks();
+    if (this.editorMode === 'default') {
+      this.toggleDefaultEditorLevel();
+    } else {
+      this.resetEditorGrid();
+      this.editorDirty = true;
+      this.editorGridToBricks();
+    }
   } else if (key.indexOf('tool:') === 0) {
     this.editorTool = key.slice(5);
     this.audio.playClick();
@@ -1122,6 +1797,32 @@ BrickBreakerRuntime.prototype.handleUiAction = function (key) {
 BrickBreakerRuntime.prototype.updatePaddleFromScreen = function (screenX) {
   var world = this.screenToWorld(screenX, this.height / 2);
   this.paddle.x = utils.clamp(world.x, BOARD_LEFT + this.paddle.w / 2, BOARD_RIGHT - this.paddle.w / 2);
+};
+
+BrickBreakerRuntime.prototype.getPaddleDragGain = function (speedPxPerMs) {
+  var t = utils.clamp((speedPxPerMs - PADDLE_DRAG_SPEED_MIN) / (PADDLE_DRAG_SPEED_MAX - PADDLE_DRAG_SPEED_MIN), 0, 1);
+  return PADDLE_DRAG_BASE_GAIN + (PADDLE_DRAG_FAST_GAIN - PADDLE_DRAG_BASE_GAIN) * t;
+};
+
+BrickBreakerRuntime.prototype.updatePaddleFromDrag = function (point, event) {
+  var drag = this.touchStart || this.createPaddleDragState(point, event);
+  var now = this.getTouchTimeMs(event);
+  var lastTime = drag.lastTime || (now - PADDLE_DRAG_FALLBACK_DT_MS);
+  var dt = Math.max(PADDLE_DRAG_MIN_DT_MS, now - lastTime);
+  var dx = point.x - drag.lastX;
+  var speed = Math.abs(dx) / dt;
+  var gain = this.getPaddleDragGain(speed);
+  var worldDelta = this.screenDeltaToWorld(dx) * gain;
+  if (Math.abs(dx) > 0.01) {
+    this.paddle.x = utils.clamp(
+      this.paddle.x + worldDelta,
+      BOARD_LEFT + this.paddle.w / 2,
+      BOARD_RIGHT - this.paddle.w / 2
+    );
+  }
+  drag.lastX = point.x;
+  drag.lastTime = now;
+  this.touchStart = drag;
 };
 
 BrickBreakerRuntime.prototype.updateAimFromPoint = function (point) {
@@ -1243,6 +1944,7 @@ BrickBreakerRuntime.prototype.fireSalvo = function (dir) {
   var count = this.getLaunchBallCount();
   var spread;
   this.readyToShoot = false;
+  this.openingGuideVisible = false;
   this.pendingBalls = [];
   this.runStats.shots += 1;
   for (i = 0; i < count; i += 1) {
@@ -1286,6 +1988,7 @@ BrickBreakerRuntime.prototype.update = function (dt, now) {
   this.elapsed = now || (this.elapsed + safeDt);
   if (this.state === 'playing') {
     this.heavyTimer = Math.max(0, this.heavyTimer - safeDt);
+    this.updateHeavyBallState();
     this.updatePendingBalls(safeDt);
     if (this.state === 'playing') {
       this.updateBalls(safeDt);
@@ -1465,7 +2168,7 @@ BrickBreakerRuntime.prototype.resolvePaddleCollision = function (ball) {
   }
   rel = utils.clamp((ball.x - this.paddle.x) / (this.paddle.w / 2), -1, 1);
   angle = rel * Math.PI * 0.36;
-  speed = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy) * 1.005;
+  speed = BALL_SPEED;
   ball.y = this.paddle.y + this.paddle.h / 2 + ball.r + 0.01;
   ball.vx = Math.sin(angle) * speed;
   ball.vy = Math.cos(angle) * speed;
@@ -1589,6 +2292,12 @@ BrickBreakerRuntime.prototype.hitBrick = function (brick, damage, strong, suppre
   if (brick.wall) {
     brick.pulse = 1;
     this.bricksDirty = true;
+    if (strong && this.isBreakableWallBrick(brick)) {
+      this.audio.playBrickHit(true);
+      this.spawnEraseEffect(brick.x, brick.y, BRICK_COLORS.wall, 0.38);
+      this.destroyBrick(brick, true, false);
+      return;
+    }
     this.audio.playBrickHit(true);
     return;
   }
@@ -1599,6 +2308,10 @@ BrickBreakerRuntime.prototype.hitBrick = function (brick, damage, strong, suppre
   this.spawnEraseEffect(brick.x, brick.y, BRICK_COLORS[brick.colorKey] || 0xffffff, finalBreakable ? 0.82 : 0.42);
   this.destroyBrick(brick, suppressPowerDrop, finalBreakable);
   this.tryCompleteLevel();
+};
+
+BrickBreakerRuntime.prototype.isBreakableWallBrick = function (brick) {
+  return !!brick && brick.wall && brick.row > 0 && brick.col > 0 && brick.col < COLS - 1;
 };
 
 BrickBreakerRuntime.prototype.destroyBrick = function (brick, suppressPowerDrop, keepFinalVisual) {
@@ -1726,19 +2439,24 @@ BrickBreakerRuntime.prototype.activateStoredPower = function (type) {
 };
 
 BrickBreakerRuntime.prototype.applyHeavyToActiveBalls = function () {
+  this.updateHeavyBallState();
+  if (this.balls.length) {
+    this.spawnEffect(this.paddle.x, this.paddle.y + 0.45, 0xffb13d, 0.45);
+  }
+};
+
+BrickBreakerRuntime.prototype.updateHeavyBallState = function () {
+  var heavyActive = this.heavyTimer > 0;
   var i;
   var ball;
   for (i = 0; i < this.balls.length; i += 1) {
     ball = this.balls[i];
-    ball.heavy = true;
-    ball.r = Math.max(ball.r, BALL_RADIUS * 1.18);
-    ball.damage = Math.max(ball.damage || 1, this.ballDamage + 1);
-    if (ball.mesh && ball.mesh.userData && ball.mesh.userData.body && this.materials.heavyBall) {
-      ball.mesh.userData.body.material = this.materials.heavyBall;
+    ball.heavy = heavyActive;
+    ball.r = heavyActive ? Math.max(ball.r, BALL_RADIUS * 1.18) : BALL_RADIUS;
+    ball.damage = heavyActive ? Math.max(ball.damage || 1, this.ballDamage + 1) : this.ballDamage;
+    if (ball.mesh && ball.mesh.userData && ball.mesh.userData.body) {
+      ball.mesh.userData.body.material = heavyActive && this.materials.heavyBall ? this.materials.heavyBall : this.materials.ball;
     }
-  }
-  if (this.balls.length) {
-    this.spawnEffect(this.paddle.x, this.paddle.y + 0.45, 0xffb13d, 0.45);
   }
 };
 
@@ -1784,14 +2502,18 @@ BrickBreakerRuntime.prototype.triggerBomb = function () {
       break;
     }
     brick = this.bricks[i];
-    if (brick.hp > 0 && !brick.wall && utils.distance(brick.x, brick.y, target.x, target.y) < 0.9) {
+    if (
+      brick.hp > 0 &&
+      !brick.wall &&
+      Math.abs(brick.col - target.col) + Math.abs(brick.row - target.row) <= BOMB_GRID_RANGE
+    ) {
       this.hitBrick(brick, 4 + this.cannonLevel, true, true);
     }
   }
   if (this.state !== 'playing') {
     return;
   }
-  this.spawnEffect(target.x, target.y, 0xffa133, 0.9);
+  this.spawnEffect(target.x, target.y, 0xffa133, BOMB_EFFECT_LIFE, BOMB_EFFECT_SCALE);
   this.audio.playBomb();
   this.setMessage('炸弹清场', 1);
 };
@@ -1895,18 +2617,21 @@ BrickBreakerRuntime.prototype.beginLevelCompleteSlowMotion = function () {
 };
 
 BrickBreakerRuntime.prototype.finalizeLevelComplete = function () {
-  this.state = 'victory';
+  var hasNextLevel = !this.currentRunCustom && this.level < DEFAULT_LEVEL_COUNT;
+  this.state = hasNextLevel ? 'levelclear' : 'victory';
   this.completionDelay = 0;
   this.completionBrick = null;
   this.score += COMPLETE_SCORE_BONUS;
   this.runStats.completed = true;
   this.runStats.score = this.score;
   this.runStats.endLevel = this.cannonLevel;
-  this.resetGameProgress();
-  this.saveProgress();
+  if (!hasNextLevel) {
+    this.resetGameProgress();
+    this.saveProgress();
+  }
   this.readyToShoot = false;
   this.clearPlayfieldForResult();
-  this.setMessage('关卡完成', 2);
+  this.setMessage(hasNextLevel ? '第 ' + this.level + ' 关完成' : '关卡完成', 2);
   this.audio.stopBgm();
 };
 
@@ -1970,7 +2695,7 @@ BrickBreakerRuntime.prototype.clearActiveEntities = function (clearEffects) {
   }
 };
 
-BrickBreakerRuntime.prototype.spawnEffect = function (x, y, color, life) {
+BrickBreakerRuntime.prototype.spawnEffect = function (x, y, color, life, scale) {
   this.pruneEffectQueue();
   this.effects.push({
     id: 'effect-' + this.nextId,
@@ -1978,6 +2703,7 @@ BrickBreakerRuntime.prototype.spawnEffect = function (x, y, color, life) {
     x: x,
     y: y,
     color: color,
+    scale: scale || 1,
     life: life || 0.4,
     age: 0,
     mesh: null
@@ -2041,15 +2767,36 @@ BrickBreakerRuntime.prototype.setMessage = function (text, seconds) {
 
 BrickBreakerRuntime.prototype.enterEditor = function () {
   this.state = 'editor';
+  this.editorMode = 'custom';
+  this.editorDirty = false;
   this.completionDelay = 0;
   this.completionBrick = null;
   this.clearActiveEntities(true);
   this.readyToShoot = false;
   if (this.customDesign && this.customDesign.cells) {
     this.editorGrid = this.cloneCells(this.customDesign.cells);
+  } else {
+    this.resetEditorGrid();
   }
   this.editorGridToBricks();
   this.setMessage('编辑关卡：选择颜色后点格子', 1.8);
+  this.audio.playClick();
+};
+
+BrickBreakerRuntime.prototype.enterDefaultEditor = function (level) {
+  var targetLevel = utils.clamp(Math.round(level || 1), 1, DEFAULT_LEVEL_COUNT);
+  this.state = 'editor';
+  this.editorMode = 'default';
+  this.editorDefaultLevel = targetLevel;
+  this.editorDirty = false;
+  this.completionDelay = 0;
+  this.completionBrick = null;
+  this.clearActiveEntities(true);
+  this.readyToShoot = false;
+  this.editorGrid = this.cloneCells(this.getSavedDefaultCells(targetLevel) || this.buildGeneratedLevelCells(targetLevel));
+  this.ensureDefaultOpenRoutes(targetLevel, this.editorGrid);
+  this.editorGridToBricks();
+  this.setMessage('优化默认第 ' + targetLevel + ' 关', 1.8);
   this.audio.playClick();
 };
 
@@ -2116,6 +2863,7 @@ BrickBreakerRuntime.prototype.handleEditorPoint = function (point) {
     return;
   }
   this.editorGrid[row][col] = nextType;
+  this.editorDirty = true;
   this.audio.playEditorPlace(this.editorTool);
   this.editorGridToBricks();
 };
@@ -2126,6 +2874,7 @@ BrickBreakerRuntime.prototype.saveCustomLevel = function () {
     updatedAt: Date.now ? Date.now() : 0
   };
   utils.safeSetStorage(STORAGE_CUSTOM, this.customDesign);
+  this.editorDirty = false;
   this.setMessage('自定义关卡已保存，可分享项目给朋友挑战', 1.8);
   this.audio.playUpgrade();
 };
@@ -2133,6 +2882,119 @@ BrickBreakerRuntime.prototype.saveCustomLevel = function () {
 BrickBreakerRuntime.prototype.playCustomLevel = function () {
   this.saveCustomLevel();
   this.startRun(true);
+};
+
+BrickBreakerRuntime.prototype.saveDefaultLevel = function (silent) {
+  var key = String(this.editorDefaultLevel || 1);
+  var cells = this.cloneCells(this.editorGrid);
+  this.ensureDefaultOpenRoutes(this.editorDefaultLevel || 1, cells);
+  this.defaultDesigns[key] = {
+    cells: cells,
+    version: DEFAULT_LEVEL_TEMPLATE_VERSION,
+    updatedAt: Date.now ? Date.now() : 0
+  };
+  utils.safeSetStorage(STORAGE_DEFAULT_LEVELS, this.defaultDesigns);
+  this.editorDirty = false;
+  if (!silent) {
+    this.setMessage('默认第 ' + key + ' 关已保存', 1.6);
+    this.audio.playUpgrade();
+  }
+};
+
+BrickBreakerRuntime.prototype.defaultLevelCellsToRows = function (cells) {
+  var rows = [];
+  var line;
+  var type;
+  var r;
+  var c;
+  for (r = 0; r < INITIAL_ROWS; r += 1) {
+    line = '';
+    for (c = 0; c < COLS; c += 1) {
+      type = cells[r] && cells[r][c] ? cells[r][c] : '';
+      line += DEFAULT_LEVEL_TYPE_SYMBOLS[type] || '.';
+    }
+    rows.push(line);
+  }
+  return rows;
+};
+
+BrickBreakerRuntime.prototype.buildDefaultLevelConfigSnippet = function (level, cells) {
+  var config = this.getDefaultLevelConfig(level);
+  var rows = this.defaultLevelCellsToRows(cells);
+  var lines = [
+    '  {',
+    '    id: ' + level + ',',
+    '    name: ' + JSON.stringify(config && config.name ? config.name : '默认第' + level + '关') + ',',
+    '    rows: ['
+  ];
+  var i;
+  for (i = 0; i < rows.length; i += 1) {
+    lines.push("      '" + rows[i] + "'" + (i === rows.length - 1 ? '' : ','));
+  }
+  lines.push('    ]');
+  lines.push('  }');
+  return lines.join('\n');
+};
+
+BrickBreakerRuntime.prototype.writeExportedDefaultLevelConfig = function (level, snippet) {
+  var exportData = {
+    level: level,
+    snippet: snippet,
+    updatedAt: Date.now ? Date.now() : 0
+  };
+  this.lastExportedDefaultLevelConfig = snippet;
+  utils.safeSetStorage(STORAGE_EXPORTED_DEFAULT_LEVEL, exportData);
+  if (!this.headless && typeof console !== 'undefined' && console.log) {
+    console.log('[brick-breaker-game] default level ' + level + ' config export:\n' + snippet);
+  }
+};
+
+BrickBreakerRuntime.prototype.exportDefaultLevelConfig = function () {
+  var level = this.editorDefaultLevel || 1;
+  var cells;
+  var snippet;
+  if (this.editorMode !== 'default') {
+    return '';
+  }
+  cells = this.cloneCells(this.editorGrid);
+  this.ensureDefaultOpenRoutes(level, cells);
+  snippet = this.buildDefaultLevelConfigSnippet(level, cells);
+  this.writeExportedDefaultLevelConfig(level, snippet);
+  this.setMessage('默认第 ' + level + ' 关配置已输出', 1.8);
+  this.audio.playUpgrade();
+  return snippet;
+};
+
+BrickBreakerRuntime.prototype.toggleDefaultEditorLevel = function () {
+  var nextLevel = this.editorDefaultLevel >= DEFAULT_LEVEL_COUNT ? 1 : this.editorDefaultLevel + 1;
+  if (this.editorMode === 'default' && this.editorDirty) {
+    this.saveDefaultLevel(true);
+  }
+  this.enterDefaultEditor(nextLevel);
+};
+
+BrickBreakerRuntime.prototype.playEditedDefaultLevel = function () {
+  if (this.editorMode === 'default') {
+    this.saveDefaultLevel(true);
+  }
+  this.state = 'playing';
+  this.completionDelay = 0;
+  this.completionBrick = null;
+  this.resetGameProgress();
+  this.level = this.editorMode === 'default' ? this.editorDefaultLevel : 1;
+  this.score = 0;
+  this.lives = STARTING_LIVES;
+  this.currentRunCustom = false;
+  this.clearActiveEntities(true);
+  this.readyToShoot = true;
+  this.openingGuideVisible = true;
+  this.paddle.x = 0;
+  this.resetRunStats(false);
+  this.generateLevel(this.level, false);
+  this.setMessage('试玩默认第 ' + this.level + ' 关', 1.6);
+  this.audio.playClick();
+  this.audio.playBgm();
+  this.syncScene();
 };
 
 BrickBreakerRuntime.prototype.syncScene = function () {
@@ -2485,7 +3347,7 @@ BrickBreakerRuntime.prototype.syncEffects = function () {
       this.effectGroup.add(effect.mesh);
     }
     effect.mesh.position.set(effect.x, effect.y, 0.32);
-    effect.mesh.scale.setScalar(1 + (1 - ratio) * 2.4);
+    effect.mesh.scale.setScalar((effect.scale || 1) * (EFFECT_RING_BASE_SCALE + (1 - ratio) * EFFECT_RING_GROWTH_SCALE));
     effect.mesh.material.opacity = ratio * 0.55;
   }
 };
@@ -2557,6 +3419,7 @@ BrickBreakerRuntime.prototype.drawUi = function () {
     this.drawTitle(ctx);
   } else if (this.state === 'playing') {
     this.drawPlayingUi(ctx);
+    this.drawReadyLaunchGuide(ctx);
   } else if (this.state === 'completing') {
     this.drawPlayingUi(ctx);
     this.drawCompletionSlowMotion(ctx);
@@ -2564,7 +3427,7 @@ BrickBreakerRuntime.prototype.drawUi = function () {
     this.drawEditorUi(ctx);
   } else if (this.state === 'help') {
     this.drawHelp(ctx);
-  } else if (this.state === 'gameover' || this.state === 'victory') {
+  } else if (this.state === 'gameover' || this.state === 'victory' || this.state === 'levelclear') {
     this.drawResult(ctx);
   }
   this.drawMessage(ctx);
@@ -2576,6 +3439,7 @@ BrickBreakerRuntime.prototype.drawUi = function () {
 BrickBreakerRuntime.prototype.getUiFrameKey = function () {
   var messageTicks = this.message && this.elapsed <= this.messageUntil ? Math.ceil((this.messageUntil - this.elapsed) * 10) : 0;
   var completionTicks = this.state === 'completing' ? Math.ceil(this.completionDelay * 20) : 0;
+  var guideTicks = this.state === 'playing' && this.readyToShoot && this.openingGuideVisible ? Math.floor(this.elapsed * 5) : 0;
   var aimKey = '';
   var stats = this.runStats || {};
   if (this.state === 'playing' && this.readyToShoot && this.aimActive && this.aimPoint) {
@@ -2586,10 +3450,12 @@ BrickBreakerRuntime.prototype.getUiFrameKey = function () {
     this.width,
     this.height,
     this.readyToShoot ? 1 : 0,
+    this.level,
     aimKey,
     this.message || '',
     messageTicks,
     completionTicks,
+    guideTicks,
     this.xp,
     this.xpNeed,
     this.lives,
@@ -2684,9 +3550,242 @@ BrickBreakerRuntime.prototype.drawAimLine = function (ctx) {
   ctx.restore();
 };
 
+BrickBreakerRuntime.prototype.drawReadyLaunchGuide = function (ctx) {
+  var readyBall;
+  var ball;
+  var radius;
+  var guidePhase;
+  var swing;
+  var handRange;
+  var handY;
+  var aimStart;
+  var aimControl;
+  var aimEnd;
+  if (this.state !== 'playing' || !this.readyToShoot || this.balls.length || this.pendingBalls.length) {
+    return;
+  }
+  readyBall = this.drawPaddleReadyBall(ctx);
+  ball = readyBall.position;
+  radius = readyBall.radius;
+  guidePhase = (this.elapsed * OPENING_GUIDE_SPEED) % 1;
+  if (!this.openingGuideVisible || this.aimActive) {
+    return;
+  }
+  swing = Math.sin(guidePhase * Math.PI * 2);
+  handRange = this.width * 0.24;
+  handY = ball.y - this.height * 0.14;
+  aimStart = { x: ball.x, y: ball.y - radius - 4 };
+  aimControl = { x: ball.x + swing * this.width * 0.1, y: ball.y - this.height * 0.18 };
+  aimEnd = { x: ball.x + swing * this.width * 0.23, y: ball.y - this.height * 0.34 };
+  this.drawOpeningGuideSwipeTrack(ctx, ball.x, handY, handRange, swing);
+  this.drawOpeningGuideDots(ctx, aimStart, aimControl, aimEnd, guidePhase);
+  this.drawOpeningGuideHand(ctx, {
+    x: ball.x + swing * handRange,
+    y: handY
+  }, Math.abs(swing));
+  this.drawOpeningGuideText(ctx, ball.x, handY - 84);
+};
+
+BrickBreakerRuntime.prototype.drawPaddleReadyBall = function (ctx) {
+  var ball = this.worldToScreen(this.paddle.x, this.paddle.y + this.paddle.h / 2 + BALL_RADIUS + 0.018);
+  var radius = Math.max(5, BALL_RADIUS / WORLD_HEIGHT * this.height);
+  var outlineRadius = radius * BALL_OUTLINE_RATIO;
+  ctx.save();
+  ctx.fillStyle = '#050505';
+  ctx.beginPath();
+  ctx.arc(ball.x, ball.y, outlineRadius, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath();
+  ctx.arc(ball.x, ball.y, radius, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+  return {
+    position: ball,
+    radius: radius
+  };
+};
+
+BrickBreakerRuntime.prototype.drawOpeningGuideSwipeTrack = function (ctx, centerX, centerY, range, swing) {
+  var left = centerX - range;
+  var right = centerX + range;
+  var arrowSize = 7;
+  ctx.save();
+  ctx.globalAlpha = 0.45 + 0.18 * Math.abs(swing);
+  ctx.strokeStyle = 'rgba(255,255,255,0.78)';
+  ctx.lineWidth = 2;
+  ctx.lineCap = 'round';
+  if (ctx.setLineDash) {
+    ctx.setLineDash([6, 8]);
+  }
+  ctx.beginPath();
+  ctx.moveTo(left + 10, centerY);
+  ctx.lineTo(right - 10, centerY);
+  ctx.stroke();
+  if (ctx.setLineDash) {
+    ctx.setLineDash([]);
+  }
+  ctx.fillStyle = 'rgba(255,241,89,0.9)';
+  ctx.beginPath();
+  ctx.moveTo(left, centerY);
+  ctx.lineTo(left + arrowSize, centerY - arrowSize * 0.65);
+  ctx.lineTo(left + arrowSize, centerY + arrowSize * 0.65);
+  ctx.closePath();
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(right, centerY);
+  ctx.lineTo(right - arrowSize, centerY - arrowSize * 0.65);
+  ctx.lineTo(right - arrowSize, centerY + arrowSize * 0.65);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+};
+
+BrickBreakerRuntime.prototype.drawOpeningGuideDots = function (ctx, start, control, end, phase) {
+  var i;
+  var t;
+  var x;
+  var y;
+  var alpha;
+  ctx.save();
+  for (i = 0; i < OPENING_GUIDE_DASHES; i += 1) {
+    t = i / (OPENING_GUIDE_DASHES - 1);
+    x = (1 - t) * (1 - t) * start.x + 2 * (1 - t) * t * control.x + t * t * end.x;
+    y = (1 - t) * (1 - t) * start.y + 2 * (1 - t) * t * control.y + t * t * end.y;
+    alpha = 0.28 + 0.48 * (1 - Math.abs(((phase + t) % 1) - 0.5) * 2);
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(x, y, 2.2 + t * 1.2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+};
+
+BrickBreakerRuntime.prototype.drawOpeningGuideHand = function (ctx, point, pull) {
+  var image = this.getOpeningGuideHandImage();
+  var size = 76;
+  var x = Math.round(point.x - size / 2);
+  var y = Math.round(point.y - size / 2 + pull * 2);
+  if (image) {
+    ctx.save();
+    if (typeof ctx.imageSmoothingEnabled !== 'undefined') {
+      ctx.imageSmoothingEnabled = true;
+    }
+    ctx.drawImage(image, x, y, size, size);
+    ctx.restore();
+    return;
+  }
+  ctx.save();
+  ctx.translate(point.x, point.y);
+  ctx.rotate(-0.45);
+  ctx.shadowColor = 'rgba(0,0,0,0.52)';
+  ctx.shadowOffsetX = 3;
+  ctx.shadowOffsetY = 4;
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = '#ffffff';
+  ctx.strokeStyle = '#050505';
+  ctx.lineWidth = 3;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.beginPath();
+  ctx.moveTo(-10, 15);
+  ctx.quadraticCurveTo(-18, 1, -8, -5);
+  ctx.lineTo(-3, -2);
+  ctx.lineTo(-3, -27);
+  ctx.quadraticCurveTo(-3, -36, 5, -36);
+  ctx.quadraticCurveTo(12, -35, 12, -27);
+  ctx.lineTo(12, -7);
+  ctx.lineTo(18, -15);
+  ctx.quadraticCurveTo(25, -22, 31, -16);
+  ctx.quadraticCurveTo(36, -10, 29, -2);
+  ctx.lineTo(17, 15);
+  ctx.quadraticCurveTo(8, 26, -10, 15);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.strokeStyle = 'rgba(0,0,0,0.25)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(6, -28);
+  ctx.lineTo(6, -5);
+  ctx.moveTo(15, -7);
+  ctx.lineTo(22, -13);
+  ctx.stroke();
+  ctx.restore();
+};
+
+BrickBreakerRuntime.prototype.getOpeningGuideHandImage = function () {
+  var surface;
+  var ctx;
+  if (this.openingGuideHandImage) {
+    return this.openingGuideHandImage;
+  }
+  surface = utils.createCanvas(128, 128, 3);
+  ctx = surface.ctx;
+  if (!ctx) {
+    return null;
+  }
+  ctx.clearRect(0, 0, 128, 128);
+  ctx.save();
+  ctx.translate(66, 67);
+  ctx.rotate(-0.45);
+  ctx.shadowColor = 'rgba(0,0,0,0.42)';
+  ctx.shadowOffsetX = 4;
+  ctx.shadowOffsetY = 5;
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = '#ffffff';
+  ctx.strokeStyle = '#050505';
+  ctx.lineWidth = 7;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.beginPath();
+  ctx.moveTo(-15, 22);
+  ctx.quadraticCurveTo(-28, 1, -13, -9);
+  ctx.lineTo(-5, -5);
+  ctx.lineTo(-5, -40);
+  ctx.quadraticCurveTo(-5, -53, 7, -53);
+  ctx.quadraticCurveTo(18, -52, 18, -40);
+  ctx.lineTo(18, -11);
+  ctx.lineTo(28, -25);
+  ctx.quadraticCurveTo(39, -35, 48, -25);
+  ctx.quadraticCurveTo(56, -16, 45, -4);
+  ctx.lineTo(26, 23);
+  ctx.quadraticCurveTo(12, 39, -15, 22);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.shadowColor = 'transparent';
+  ctx.strokeStyle = 'rgba(0,0,0,0.26)';
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.moveTo(8, -42);
+  ctx.lineTo(8, -9);
+  ctx.moveTo(23, -12);
+  ctx.lineTo(35, -23);
+  ctx.stroke();
+  ctx.restore();
+  this.openingGuideHandImage = surface.canvas;
+  return this.openingGuideHandImage;
+};
+
+BrickBreakerRuntime.prototype.drawOpeningGuideText = function (ctx, centerX, topY) {
+  var w = 172;
+  var h = 32;
+  var x = utils.clamp(centerX - w / 2, 18, this.width - w - 18);
+  var y = utils.clamp(topY, this.getSafeTop() + 76, this.height - this.getSafeBottom() - 156);
+  ctx.save();
+  utils.fillRoundRect(ctx, x + 3, y + 3, w, h, 12, 'rgba(0,0,0,0.42)');
+  utils.fillRoundRect(ctx, x, y, w, h, 12, 'rgba(6,16,31,0.82)');
+  utils.strokeRoundRect(ctx, x, y, w, h, 12, 'rgba(255,255,255,0.32)', 1.2);
+  utils.setTextStyle(ctx, 13, '900', '#ffffff', 'center', 'middle');
+  ctx.fillText('左右拖动调角度，松开发射', x + w / 2, y + h / 2);
+  ctx.restore();
+};
+
 BrickBreakerRuntime.prototype.drawTitle = function (ctx) {
   var titleY = this.getSafeTop() + 70;
-  var y = this.height * 0.62;
+  var y = this.height * 0.56;
   ctx.save();
   ctx.shadowColor = 'rgba(0,0,0,0.78)';
   ctx.shadowBlur = 0;
@@ -2708,10 +3807,13 @@ BrickBreakerRuntime.prototype.drawTitle = function (ctx) {
   ctx.restore();
   this.touchRects.editor = this.createButtonRect(this.width / 2, y, UI_BUTTON_WIDTH);
   this.touchRects.start = this.createButtonRect(this.width / 2, y + 52, UI_BUTTON_WIDTH);
-  this.touchRects.help = this.createButtonRect(this.width / 2, y + 104, UI_BUTTON_WIDTH);
+  this.touchRects.editDefault = this.createButtonRect(this.width / 2, y + 104, UI_BUTTON_WIDTH);
+  this.touchRects.help = this.createButtonRect(this.width / 2, y + 156, UI_BUTTON_WIDTH);
   this.drawMainButton(ctx, this.touchRects.editor, '自定义关卡', '#38bdf8');
-  this.drawMainButton(ctx, this.touchRects.start, '体验默认关卡', '#374151');
+  this.drawMainButton(ctx, this.touchRects.start, '挑战默认关卡', '#374151');
+  this.drawMainButton(ctx, this.touchRects.editDefault, '默认关卡编辑器', '#374151');
   this.drawMainButton(ctx, this.touchRects.help, '玩法说明', '#1f2937');
+  this.drawPaddleReadyBall(ctx);
 };
 
 BrickBreakerRuntime.prototype.drawPlayingUi = function (ctx) {
@@ -2724,7 +3826,7 @@ BrickBreakerRuntime.prototype.drawPlayingUi = function (ctx) {
   utils.setTextStyle(ctx, 12, '800', 'rgba(236,246,255,0.86)', 'left', 'middle');
   ctx.fillText('经验 ' + this.xp + '/' + this.xpNeed, 34, panelY + 20);
   utils.setTextStyle(ctx, 12, '900', '#fff159', 'center', 'middle');
-  ctx.fillText('生命 ' + this.lives, this.width / 2, panelY + 20);
+  ctx.fillText(this.currentRunCustom ? '生命 ' + this.lives : '第 ' + this.level + '/' + DEFAULT_LEVEL_COUNT + ' 关 · 生命 ' + this.lives, this.width / 2, panelY + 20);
   utils.setTextStyle(ctx, 12, '800', '#ffffff', 'right', 'middle');
   ctx.fillText('弹球 ' + this.getLaunchBallCount(), this.width - 34, panelY + 20);
   if (this.heavyTimer > 0) {
@@ -2753,10 +3855,10 @@ BrickBreakerRuntime.prototype.drawCompletionSlowMotion = function (ctx) {
   var progress = 1 - utils.clamp(this.completionDelay / total, 0, 1);
   var centerY = this.height * 0.38;
   ctx.save();
-  ctx.globalAlpha = 0.15 + progress * 0.12;
+  ctx.globalAlpha = 0.1 + progress * 0.08;
   ctx.fillStyle = '#fff7cf';
   ctx.beginPath();
-  ctx.arc(this.width / 2, centerY, 88 + progress * 34, 0, Math.PI * 2);
+  ctx.arc(this.width / 2, centerY, 42 + progress * 18, 0, Math.PI * 2);
   ctx.fill();
   ctx.globalAlpha = 1;
   ctx.shadowColor = 'rgba(0,0,0,0.72)';
@@ -2802,15 +3904,15 @@ BrickBreakerRuntime.prototype.drawHelp = function (ctx) {
   y = this.drawHelpBullet(ctx, contentX, y, contentW, '#ffffff', '默认 1 颗白球，炮台升级和道具会增加弹球数量、伤害和挡板宽度。');
 
   y = this.drawHelpSectionTitle(ctx, contentX, y + 4, '砖块规则');
-  y = this.drawHelpBullet(ctx, contentX, y, contentW, '#dbeafe', '绿色普通砖被击中后清空；灰色墙体只反弹，不会被消除。');
+  y = this.drawHelpBullet(ctx, contentX, y, contentW, '#dbeafe', '绿色普通砖被击中后清空；灰色墙体默认只反弹，重弹可击碎内部灰墙，边界墙仍会保护棋盘。');
   y = this.drawHelpBullet(ctx, contentX, y, contentW, '#dbeafe', '每局 3 条命：全部弹球落出底部且没有清空砖块时扣 1 条命，生命归零后进入挑战结算。');
 
   y = this.drawHelpSectionTitle(ctx, contentX, y + 4, '技能砖与下落道具');
   skillY = y;
   skillY = this.drawHelpSkill(ctx, contentX, skillY, contentW, 'split', '蓝色分裂', '复制场上弹球，适合扩大覆盖范围。');
-  skillY = this.drawHelpSkill(ctx, contentX, skillY, contentW, 'heavy', '金色重弹', '短时间提升体积和伤害，破墙区更稳。');
+  skillY = this.drawHelpSkill(ctx, contentX, skillY, contentW, 'heavy', '金色重弹', '短时间提升体积和伤害，可击碎内部灰墙。');
   skillY = this.drawHelpSkill(ctx, contentX, skillY, contentW, 'shotgun', '紫色霰弹', '从挡板额外发射多颗弹球。');
-  skillY = this.drawHelpSkill(ctx, contentX, skillY, contentW, 'bomb', '红色炸弹', '范围清理附近砖块。');
+  skillY = this.drawHelpSkill(ctx, contentX, skillY, contentW, 'bomb', '红色炸弹', '清理落点与上下左右相邻砖块。');
   skillY = this.drawHelpSkill(ctx, contentX, skillY, contentW, 'laser', '粉色激光', '贯穿挡板正上方一列。');
   y = skillY;
 
@@ -2911,8 +4013,13 @@ BrickBreakerRuntime.prototype.drawEditorUi = function (ctx) {
   var panelH = 196;
   var panelY = bottom - panelH;
   var actionButtonW = Math.min(UI_BUTTON_WIDTH, (this.width - 44) / 2);
+  var defaultButtonW = Math.min(UI_SMALL_BUTTON_WIDTH, (this.width - 56) / 3);
   var leftCenter = this.width / 2 - actionButtonW / 2 - 5;
   var rightCenter = this.width / 2 + actionButtonW / 2 + 5;
+  var defaultLeftCenter = 16 + defaultButtonW / 2;
+  var defaultMidCenter = this.width / 2;
+  var defaultRightCenter = this.width - 16 - defaultButtonW / 2;
+  var nextDefaultLevel = this.editorDefaultLevel >= DEFAULT_LEVEL_COUNT ? 1 : this.editorDefaultLevel + 1;
   var x = 8;
   var i;
   var rect;
@@ -2935,16 +4042,26 @@ BrickBreakerRuntime.prototype.drawEditorUi = function (ctx) {
       ctx.fillText(labels[i], rect.x + rect.width / 2, rect.y + rect.height / 2);
     }
   }
-  this.touchRects.title = this.createButtonRect(leftCenter, panelY + 74, actionButtonW);
-  this.touchRects.clearLevel = this.createButtonRect(rightCenter, panelY + 74, actionButtonW);
-  this.touchRects.saveLevel = this.createButtonRect(leftCenter, panelY + 126, actionButtonW);
-  this.touchRects.playCustom = this.createButtonRect(rightCenter, panelY + 126, actionButtonW);
-  this.drawMainButton(ctx, this.touchRects.title, '返回主页', '#1f2937');
-  this.drawMainButton(ctx, this.touchRects.clearLevel, '清空', '#374151');
-  this.drawMainButton(ctx, this.touchRects.saveLevel, '保存', '#374151');
-  this.drawMainButton(ctx, this.touchRects.playCustom, '挑战', '#38bdf8');
+  this.touchRects.title = this.createButtonRect(leftCenter, panelY + 66, actionButtonW);
+  this.touchRects.clearLevel = this.createButtonRect(rightCenter, panelY + 66, actionButtonW);
+  this.drawMainButton(ctx, this.touchRects.title, '返回游戏', '#1f2937');
+  if (this.editorMode === 'default') {
+    this.touchRects.saveLevel = this.createButtonRect(defaultLeftCenter, panelY + 126, defaultButtonW);
+    this.touchRects.exportDefault = this.createButtonRect(defaultMidCenter, panelY + 126, defaultButtonW);
+    this.touchRects.playCustom = this.createButtonRect(defaultRightCenter, panelY + 126, defaultButtonW);
+    this.drawMainButton(ctx, this.touchRects.clearLevel, '编辑第' + nextDefaultLevel + '关', '#374151');
+    this.drawCompactButton(ctx, this.touchRects.saveLevel, '保存默认', '#374151');
+    this.drawCompactButton(ctx, this.touchRects.exportDefault, '导出配置', '#475569');
+    this.drawCompactButton(ctx, this.touchRects.playCustom, '试玩默认', '#38bdf8');
+  } else {
+    this.touchRects.saveLevel = this.createButtonRect(leftCenter, panelY + 126, actionButtonW);
+    this.touchRects.playCustom = this.createButtonRect(rightCenter, panelY + 126, actionButtonW);
+    this.drawMainButton(ctx, this.touchRects.clearLevel, '清空', '#374151');
+    this.drawMainButton(ctx, this.touchRects.saveLevel, '保存', '#374151');
+    this.drawMainButton(ctx, this.touchRects.playCustom, '挑战', '#38bdf8');
+  }
   utils.setTextStyle(ctx, 12, '800', 'rgba(255,255,255,0.78)', 'center', 'middle');
-  ctx.fillText('点击上方网格放置砖块或墙体', this.width / 2, this.getSafeTop() + 86);
+  ctx.fillText(this.editorMode === 'default' ? '默认第 ' + this.editorDefaultLevel + ' 关 · 手动编辑后保存' : '点击上方网格放置砖块或墙体', this.width / 2, this.getSafeTop() + 86);
 };
 
 BrickBreakerRuntime.prototype.drawSettlementItem = function (ctx, centerX, y, label, value, color) {
@@ -2957,7 +4074,7 @@ BrickBreakerRuntime.prototype.drawSettlementItem = function (ctx, centerX, y, la
 BrickBreakerRuntime.prototype.drawResult = function (ctx) {
   var stats = this.runStats || this.createRunStats();
   var y = utils.clamp(this.height * 0.49, this.getSafeTop() + 236, this.height - this.getSafeBottom() - 300);
-  var title = this.state === 'gameover' ? '挑战结束' : '关卡完成';
+  var title = this.state === 'gameover' ? '挑战结束' : this.state === 'levelclear' ? '第 ' + this.level + ' 关完成' : '关卡完成';
   var panelW = Math.min(this.width - 76, 300);
   var panelH = 190;
   var panelX = this.width / 2 - panelW / 2;
@@ -2991,9 +4108,9 @@ BrickBreakerRuntime.prototype.drawResult = function (ctx) {
   this.touchRects.restart = this.createButtonRect(this.width / 2, panelY + panelH + 18, UI_BUTTON_WIDTH);
   this.touchRects.editor = this.createButtonRect(this.width / 2, panelY + panelH + 70, UI_BUTTON_WIDTH);
   this.touchRects.title = this.createButtonRect(this.width / 2, panelY + panelH + 122, UI_BUTTON_WIDTH);
-  this.drawMainButton(ctx, this.touchRects.restart, this.state === 'gameover' ? '重新开始' : '再玩一次', '#38bdf8');
+  this.drawMainButton(ctx, this.touchRects.restart, this.state === 'levelclear' ? '下一关' : this.state === 'gameover' ? '重新开始' : '再玩一次', '#38bdf8');
   this.drawMainButton(ctx, this.touchRects.editor, '编辑关卡', '#374151');
-  this.drawMainButton(ctx, this.touchRects.title, '返回标题', '#1f2937');
+  this.drawMainButton(ctx, this.touchRects.title, '返回游戏', '#1f2937');
 };
 
 BrickBreakerRuntime.prototype.drawMessage = function (ctx) {
@@ -3077,6 +4194,9 @@ BrickBreakerRuntime.prototype.render = function () {
 };
 
 BrickBreakerRuntime.prototype.getTargetFrameIntervalMs = function () {
+  if (this.state === 'playing' && this.readyToShoot && this.openingGuideVisible) {
+    return ACTIVE_FRAME_INTERVAL_MS;
+  }
   if (this.state === 'playing' && (this.balls.length || this.pendingBalls.length || this.powerups.length || this.effects.length || this.aimActive)) {
     return ACTIVE_FRAME_INTERVAL_MS;
   }
