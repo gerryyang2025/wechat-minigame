@@ -703,6 +703,11 @@ BrickBreakerRuntime.prototype.resetTitlePreview = function () {
   this.currentRunCustom = false;
   this.clearActiveEntities(true);
   this.resetShotState();
+  this.paddle.x = 0;
+  this.touchMode = 'idle';
+  this.touchStart = null;
+  this.aimActive = false;
+  this.aimPoint = null;
   this.resetRunStats(false);
   this.readyToShoot = true;
   this.generateLevel(1, false);
